@@ -34,7 +34,10 @@ function lookup(dict: unknown, key: string): string | undefined {
 }
 
 export function translate(locale: Locale, key: TKey, params?: TParams): string {
-  const raw = lookup(dictionaries[locale], key) ?? lookup(fr, key) ?? key;
+  // Pluriel simple : une clé « <clé>_one » est utilisée quand le paramètre `n` vaut 0 ou 1 (règle française).
+  const n = params?.n;
+  const singular = typeof n === 'number' && Math.abs(n) <= 1 ? (lookup(dictionaries[locale], `${key}_one`) ?? lookup(fr, `${key}_one`)) : undefined;
+  const raw = singular ?? lookup(dictionaries[locale], key) ?? lookup(fr, key) ?? key;
   if (!params) return raw;
   return raw.replace(/\{(\w+)\}/g, (_, name: string) => (name in params ? String(params[name]) : `{${name}}`));
 }

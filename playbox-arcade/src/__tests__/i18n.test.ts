@@ -12,6 +12,12 @@ describe('i18n', () => {
     expect(translate('fr', 'common.level', { n: 4 })).toBe('Niv. 4');
   });
 
+  it('accorde le pluriel français', () => {
+    expect(translate('fr', 'profile.playsCount', { n: 1 })).toBe('1 partie');
+    expect(translate('fr', 'profile.playsCount', { n: 0 })).toBe('0 partie');
+    expect(translate('fr', 'profile.playsCount', { n: 3 })).toBe('3 parties');
+  });
+
   it('retombe sur le français quand une clé manque en anglais', () => {
     expect(translate('en', 'common.play')).toBe('Play');
     expect(translate('en', 'settings.title')).toBe(fr.settings.title);

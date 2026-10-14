@@ -39,14 +39,14 @@ Ajouter un jeu = créer un dossier dans `src/games/`, exporter un composant qui 
 
 ## Étapes
 
-1. Fondation : projet Expo, thème, i18n, stockage, audio, haptique.
-2. Navigation et interface : splash animé, accueil, catégories, profil, paramètres.
-3. Moteur de jeu : boucle, coque de partie (pause, résultat, récompenses), utilitaires.
-4. Précision : fléchettes, tir à l'arc, lancer d'anneaux (bowling annoncé « Bientôt disponible »).
-5. Football : tirs au but, coup franc, défi précision.
-6. Couple : quiz « Tu me connais ? », « Qui de nous deux ? », cartes de questions, défis à deux.
-7. Progression : XP, niveaux, pièces, succès, défis du jour, cosmétiques déblocables.
-8. Tests, corrections, finition.
+1. [x] Fondation : projet Expo, thème, i18n, stockage, audio, haptique.
+2. [x] Navigation et interface : splash animé, accueil, catégories, profil, paramètres.
+3. [x] Moteur de jeu : boucle, coque de partie (pause, résultat, récompenses), utilitaires.
+4. [x] Précision : fléchettes, tir à l'arc, lancer d'anneaux (bowling annoncé « Bientôt disponible »).
+5. [x] Football : tirs au but, coup franc, défi précision (jongles annoncés « Bientôt disponible »).
+6. [x] Couple : quiz « Tu me connais ? », « Qui de nous deux ? », cartes de questions, défis à deux.
+7. [x] Progression : XP, niveaux, pièces, succès, défis du jour, cosmétiques déblocables.
+8. [x] Tests, corrections, finition (voir README : tests réalisés et limites connues).
 
 ## Fonctionnement hors ligne
 

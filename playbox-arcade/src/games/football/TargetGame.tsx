@@ -95,8 +95,8 @@ export default function TargetGame({ paused, settings, skins, onFinish }: GamePr
     fx.float(t('play.timeUp'), WORLD_W / 2, geo.h * 0.5, palette.yellow, 36);
     onFinish({
       score: s.score,
-      performance: clamp(s.score / 2200, 0, 1),
-      won: s.score >= 1500,
+      performance: clamp(s.score / 3000, 0, 1),
+      won: s.score >= 2500,
       stats: { targetsHit: s.stats.hits },
       summary: [
         { label: t('play.targetsHit'), value: `${s.stats.hits} / ${s.stats.shots}` },

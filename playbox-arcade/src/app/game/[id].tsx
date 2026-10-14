@@ -1,6 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { BackHandler, Modal, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AppState, BackHandler, Modal, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArcadeButton } from '../../components/ArcadeButton';
 import { Backdrop } from '../../components/Backdrop';
@@ -50,6 +50,15 @@ export default function GameScreen() {
       return () => sub.remove();
     }, [phase]),
   );
+
+  // Appel, notification, changement d'app : la partie se met en pause.
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') setPaused(true);
+    });
+    return () => sub.remove();
+  }, [phase]);
 
   const players = mode === 'duo' ? names.map((n, i) => n.trim() || t('common.player', { n: i + 1 })) : [profile.name];
 

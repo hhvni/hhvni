@@ -98,9 +98,7 @@ export default function ProfileScreen() {
               </Gradient>
               <View style={{ flex: 1 }}>
                 <Text style={[type.body, { color: palette.text }]}>{t(g.title)}</Text>
-                <Text style={[type.tiny, { color: palette.textDim }]}>
-                  {profile.perGame[g.id].plays} {t('profile.games').toLowerCase()}
-                </Text>
+                <Text style={[type.tiny, { color: palette.textDim }]}>{t('profile.playsCount', { n: profile.perGame[g.id].plays })}</Text>
               </View>
               <Text style={[type.heading, { color: palette.yellow }]}>{profile.perGame[g.id].best}</Text>
             </View>
@@ -117,7 +115,7 @@ export default function ProfileScreen() {
           return (
             <View key={a.id} style={[styles.achievement, got && { borderColor: palette.mint }]} accessible accessibilityLabel={`${t(`achievements.${a.id}.name` as TKey)} : ${t(`achievements.${a.id}.desc` as TKey)}`}>
               <View style={[styles.achIcon, { backgroundColor: got ? palette.mint : palette.night2 }]}>
-                <Icon name={got ? a.icon : 'lock'} size={20} color={got ? palette.night : palette.textDim} accent={palette.night} />
+                <Icon name={got ? a.icon : 'lock'} size={20} color={got ? palette.night : palette.textDim} accent={palette.mint} />
               </View>
               <Text style={[type.small, { color: got ? palette.text : palette.textMuted, textAlign: 'center' }]} numberOfLines={2}>
                 {t(`achievements.${a.id}.name` as TKey)}

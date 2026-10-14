@@ -72,7 +72,7 @@ export default function PenaltyGame({ mode, players, paused, settings, skins, on
     const summary = [
       { label: t('play.goals'), value: `${s.stats.goals} / ${s.stats.shots}` },
       { label: t('play.bestStreak'), value: String(s.stats.bestStreak) },
-      { label: t('play.topCorner'), value: String(s.stats.topCorners) },
+      { label: t('play.topCorners'), value: String(s.stats.topCorners) },
     ];
     if (mode === 'duo') {
       const [a, b] = s.goals;

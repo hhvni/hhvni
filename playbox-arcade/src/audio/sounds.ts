@@ -1,6 +1,6 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 /**
  * Sons générés par scripts/generate-sounds.mjs. Ajouter un son :
@@ -30,11 +30,17 @@ class SoundManager {
   private hapticsEnabled = true;
   private initialized = false;
   private musicWanted = false;
+  private inForeground = true;
 
   init() {
     if (this.initialized) return;
     this.initialized = true;
     setAudioModeAsync({ playsInSilentMode: false }).catch(() => {});
+    // Coupe la musique quand l'application passe en arrière-plan.
+    AppState.addEventListener('change', (state) => {
+      this.inForeground = state === 'active';
+      this.syncMusic();
+    });
   }
 
   configure(opts: { sound: boolean; music: boolean; haptics: boolean }) {
@@ -80,7 +86,7 @@ class SoundManager {
 
   private syncMusic() {
     try {
-      if (this.musicEnabled && this.musicWanted) {
+      if (this.musicEnabled && this.musicWanted && this.inForeground) {
         if (!this.music) {
           this.music = createAudioPlayer(require('../../assets/sounds/music.wav'));
           this.music.loop = true;

@@ -114,7 +114,7 @@ export default function FreeKickGame({ paused, settings, skins, onFinish }: Game
       stats: { freekickGoals: s.stats.goals, topCorners: s.stats.topCorners },
       summary: [
         { label: t('play.goals'), value: `${s.goals} / ${SHOTS}` },
-        { label: t('play.topCorner'), value: String(s.stats.topCorners) },
+        { label: t('play.topCorners'), value: String(s.stats.topCorners) },
         { label: t('play.curveGoals'), value: String(s.stats.curved) },
       ],
     });

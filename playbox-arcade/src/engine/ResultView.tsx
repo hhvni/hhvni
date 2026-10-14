@@ -33,7 +33,7 @@ export function ResultView({ result, reward, theme, scored, onReplay, onOtherGam
     feedback(good ? 'victory' : 'impact', good ? 'success' : 'medium');
   }, [enter, good]);
 
-  const headline = result.headline ?? (reward.newBest || result.won ? t('result.victory') : good ? t('result.great') : t('result.finished'));
+  const headline = result.headline ?? (result.won ? t('result.victory') : good ? t('result.great') : t('result.finished'));
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -125,7 +125,7 @@ function Highlight({ icon, color, title, subtitle }: { icon: React.ComponentProp
   return (
     <View style={[styles.highlight, { borderColor: color }]}>
       <View style={[styles.hIcon, { backgroundColor: color }]}>
-        <Icon name={icon} size={20} color={palette.night} accent={palette.night} />
+        <Icon name={icon} size={20} color={palette.night} accent={color} />
       </View>
       <View style={{ flex: 1 }}>
         {subtitle ? <Text style={[type.tiny, { color }]}>{subtitle.toUpperCase()}</Text> : null}

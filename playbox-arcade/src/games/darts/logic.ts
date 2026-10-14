@@ -36,8 +36,8 @@ export function scoreDart(dx: number, dy: number, radius: number): DartHit {
 }
 
 /** Vitesse de lancer idéale (unités logiques / s) et tolérance « parfait ». */
-export const IDEAL_SPEED = 1300;
-export const PERFECT_TOLERANCE = 0.22;
+export const IDEAL_SPEED = 1500;
+export const PERFECT_TOLERANCE = 0.25;
 
 /**
  * Décalage vertical selon la force du lancer : trop doux → la fléchette tombe,

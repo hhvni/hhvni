@@ -196,7 +196,7 @@ export default function Home() {
           </View>
         </View>
         <Text style={[type.small, { color: palette.textMuted, marginTop: spacing.md }]}>
-          {t('home.stats', { games: profile.gamesPlayed, achievements: Object.keys(profile.achievements).length, total: ACHIEVEMENTS.length })}
+          {t('home.stats', { n: profile.gamesPlayed, achievements: Object.keys(profile.achievements).length, total: ACHIEVEMENTS.length })}
         </Text>
       </PressableScale>
     </Screen>

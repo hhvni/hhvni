@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { GestureResponderEvent, PanResponder, PanResponderGestureState, StyleSheet, View, ViewStyle } from 'react-native';
+import { GestureResponderEvent, PanResponder, PanResponderGestureState, Platform, StyleSheet, View, ViewStyle } from 'react-native';
 import Svg from 'react-native-svg';
 
 /** Largeur logique de toutes les scènes. La hauteur s'adapte au ratio de l'écran. */
@@ -83,7 +83,7 @@ export function Stage({ children, gestures, overlay, minHeight = 560 }: Props) {
 
   return (
     <View
-      style={[styles.fill, { minHeight: Math.min(minHeight, 400) }]}
+      style={[styles.fill, styles.noSelect, { minHeight: Math.min(minHeight, 400) }]}
       onLayout={(e) => {
         const { width, height } = e.nativeEvent.layout;
         if (width <= 0 || height <= 0) return;
@@ -111,6 +111,7 @@ export function Stage({ children, gestures, overlay, minHeight = 560 }: Props) {
 }
 
 const styles = StyleSheet.create({
-  // userSelect : sur le web, une sélection de texte pendant un glisser interrompt le geste.
-  fill: { flex: 1, overflow: 'hidden', userSelect: 'none' } as ViewStyle,
+  fill: { flex: 1, overflow: 'hidden' },
+  // Web : une sélection de texte pendant un glisser interrompt le geste.
+  noSelect: (Platform.OS === 'web' ? { userSelect: 'none' } : {}) as ViewStyle,
 });

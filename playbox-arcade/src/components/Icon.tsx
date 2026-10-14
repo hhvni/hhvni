@@ -39,8 +39,8 @@ export function Icon({ name, size = 24, color = '#F6F1E7', accent, strokeWidth =
       body = (
         <G>
           <Circle cx={12} cy={12} r={9} fill={color} />
-          <Circle cx={12} cy={12} r={6.5} fill="none" stroke={a} strokeWidth={1.6} />
-          <Path d="M10 8.8h3.2a1.6 1.6 0 010 3.2H10.6h2.8a1.6 1.6 0 010 3.2H10M10.6 8.8v6.4" stroke={a} strokeWidth={1.6} fill="none" strokeLinecap="round" />
+          <Circle cx={12} cy={12} r={6.6} fill="none" stroke={a} strokeWidth={1.4} />
+          <Polygon points="12,7.6 13.3,10.4 16.3,10.7 14,12.7 14.7,15.6 12,14.1 9.3,15.6 10,12.7 7.7,10.7 10.7,10.4" fill={a} />
         </G>
       );
       break;

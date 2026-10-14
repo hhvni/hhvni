@@ -40,7 +40,7 @@ export function shotTarget(g: GoalGeo, s: ShotInput, assist: boolean) {
   const u = (x - g.left) / g.width;
   // Vitesse → hauteur. Une tolérance plus large en mode assisté.
   const minSpeed = 550;
-  const range = assist ? 1700 : 1300;
+  const range = assist ? 1900 : 1500;
   const v = Math.max(0, (s.speed - minSpeed) / range) * 1.15;
   return { u, v };
 }
