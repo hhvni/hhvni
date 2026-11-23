@@ -121,7 +121,7 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
   io.use(async (socket, next) => {
     try {
       const origin = socket.handshake.headers.origin;
-      if (origin && !isAllowedOrigin(origin, socket.handshake.headers.host)) return next(new Error('Origine non autorisée'));
+      if (origin && !isAllowedOrigin(origin, socket.handshake.headers.host, socket.handshake.headers['x-forwarded-host'])) return next(new Error('Origine non autorisée'));
       const cookies = parseCookie(socket.handshake.headers.cookie ?? '');
       const user = await userFromToken(cookies[SESSION_COOKIE]);
       if (!user) return next(new Error('UNAUTHENTICATED'));

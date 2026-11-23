@@ -36,11 +36,12 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
 }
 
 /** Vérifie qu'une origine (en-tête Origin/Referer) correspond au site. */
-export function isAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
+export function isAllowedOrigin(origin: string | undefined, host: string | undefined, forwardedHost?: string | string[]): boolean {
   if (!origin) return false;
   try {
     const o = new URL(origin);
-    return o.host === new URL(env.PUBLIC_URL).host || (!!host && o.host === host);
+    const fwd = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(',')[0]?.trim();
+    return o.host === new URL(env.PUBLIC_URL).host || (!!host && o.host === host) || (!!fwd && o.host === fwd);
   } catch {
     return false;
   }
@@ -53,7 +54,7 @@ export function isAllowedOrigin(origin: string | undefined, host: string | undef
  */
 export function sameOrigin(req: Request, _res: Response, next: NextFunction): void {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  if (isAllowedOrigin(req.get('origin') ?? req.get('referer'), req.get('host'))) return next();
+  if (isAllowedOrigin(req.get('origin') ?? req.get('referer'), req.get('host'), req.get('x-forwarded-host'))) return next();
   next(new HttpError(403, 'Origine non autorisée', 'CSRF'));
 }
 

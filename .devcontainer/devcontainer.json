@@ -1,0 +1,17 @@
+{
+  "name": "Cercle Privé (poker entre amis)",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/poker-prive",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Cercle Privé — le site", "onAutoForward": "openBrowser" },
+    "5432": { "onAutoForward": "ignore" }
+  },
+  "postCreateCommand": "bash scripts/codespace-setup.sh",
+  "postStartCommand": "bash scripts/codespace-start.sh",
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "customizations": {
+    "codespaces": { "openFiles": ["poker-prive/COMMENCER-ICI.md"] }
+  }
+}
