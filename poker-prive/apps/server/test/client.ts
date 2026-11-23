@@ -49,8 +49,13 @@ export class TestClient {
     });
   }
 
-  emit<T = any>(event: string, payload: unknown): Promise<T & { ok: boolean; error?: string; code?: string }> {
-    return new Promise((resolve) => this.socket!.emit(event, payload, resolve));
+  /** Envoie une commande ; si l'anti-flood freine, réessaie après une seconde (comme un humain). */
+  async emit<T = any>(event: string, payload: unknown): Promise<T & { ok: boolean; error?: string; code?: string }> {
+    for (let attempt = 0; ; attempt++) {
+      const res = await new Promise<T & { ok: boolean; error?: string; code?: string }>((resolve) => this.socket!.emit(event, payload, resolve));
+      if (res.code !== 'RATE' || attempt >= 3 || event === 'game:action') return res;
+      await new Promise((r) => setTimeout(r, 1100));
+    }
   }
 
   waitFor(pred: (s: GameView) => boolean, timeout = 15_000): Promise<GameView> {

@@ -16,7 +16,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import { env } from '../config.js';
 import { logger } from '../logger.js';
-import { decide, getBotUser } from '../services/bots.js';
+import { getBotUser } from '../services/bots.js';
+import { decide, type BotDecision } from '../services/botBrain.js';
 
 const FAST = env.FAST_MODE === '1';
 const fmt = (n: number) => n.toLocaleString('fr-FR');
@@ -902,9 +903,18 @@ export class GameRuntime {
     this.turnStartedAt = Date.now();
     const seqAtSchedule = this.actionSeq;
     if (m.bot && !m.kicked && !m.leaveAfterHand) {
-      const ms = FAST ? 5 : 900 + secureRand(1800);
-      this.turn = { seat, userId, deadline: Date.now() + this.config.actionSeconds * 1000, usingTimeBank: false, totalMs: this.config.actionSeconds * 1000 };
-      this.turnTimer = setTimeout(() => this.botAct(userId, seqAtSchedule), ms);
+      // Le robot décide tout de suite (l'état ne bouge pas avant son action), puis « réfléchit »
+      let decision: BotDecision;
+      try {
+        decision = decide(this.table.hand!, userId, this.table.legalActions(userId)!);
+      } catch (err) {
+        logger.warn({ err }, 'Décision du robot impossible, check/fold');
+        decision = { type: 'fold', thinkMs: 1000 };
+      }
+      const total = this.config.actionSeconds * 1000;
+      const ms = FAST ? 5 : Math.min(decision.thinkMs, Math.max(800, total - 1500));
+      this.turn = { seat, userId, deadline: Date.now() + total, usingTimeBank: false, totalMs: total };
+      this.turnTimer = setTimeout(() => this.botAct(userId, seqAtSchedule, decision), ms);
       return;
     }
     if (m.away || m.leaveAfterHand || m.kicked) {
@@ -942,15 +952,10 @@ export class GameRuntime {
 
   // ═══════════════════════════ Robots ═══════════════════════════
 
-  private botAct(userId: string, seq: number): void {
+  private botAct(userId: string, seq: number, d: BotDecision): void {
     if (this.disposed || seq !== this.actionSeq || this.table.currentPlayerId() !== userId) return;
-    const h = this.table.hand!;
-    const legal = this.table.legalActions(userId);
-    const p = h.players.find((x) => x.playerId === userId);
-    if (!legal || !p) return;
-    const d = decide(p.hole, h.board, legal, h.bigBlind);
     try {
-      this.applyAction(userId, d.type, d.amount);
+      this.applyAction(userId, d.type === 'fold' && this.table.legalActions(userId)?.canCheck ? 'check' : d.type, d.amount);
     } catch {
       this.applyAction(userId, 'fold', undefined, true); // filet de sécurité : jamais de blocage
     }
