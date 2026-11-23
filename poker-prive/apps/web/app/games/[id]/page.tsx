@@ -251,6 +251,9 @@ function ControlStrip({ state, run, isAdmin, mySeat }: { state: GameView; run: R
       {isAdmin && state.mode === 'CASH' && state.status !== 'FINISHED' && (
         <Button size="sm" variant="subtle" onClick={() => confirm('Fermer la table ? Chaque joueur récupère ses jetons.') && run('game:close', {})}>Fermer la table</Button>
       )}
+      {isAdmin && state.mode === 'CASH' && state.status !== 'FINISHED' && state.seats.some((s) => !s) && (
+        <Button size="sm" variant="ghost" onClick={() => run('game:addBot', {}, 'Robot ajouté')}>🤖 Ajouter un robot</Button>
+      )}
       {state.status === 'RUNNING' && activePlayers < 2 && <span className="text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>}
       {state.status === 'WAITING' && state.mode === 'CASH' && !isAdmin && <span className="text-xs text-muted">L&apos;administrateur va démarrer la partie.</span>}
       {state.me.canReload && <Button size="sm" variant="gold" onClick={() => run('game:reload', {}, 'Jetons rechargés')}>Recharger {fmt(state.me.reloadAmount)}</Button>}
@@ -382,6 +385,9 @@ function TournamentLobby({ state, run }: { state: GameView; run: Run }) {
           )}
           {state.me.isRoomAdmin && <Button variant="success" className="flex-1" disabled={t.entrants < 2} onClick={() => run('game:start', {})}>Lancer le tournoi</Button>}
         </div>
+        {state.me.isRoomAdmin && t.entrants < state.config.maxSeats && (
+          <Button variant="ghost" className="w-full" onClick={() => run('game:addBot', {}, 'Robot inscrit')}>🤖 Ajouter un robot pour tester</Button>
+        )}
         <Link href={`/rooms/${state.roomId}`} className="block text-center text-xs text-muted hover:text-ink">← Retour au salon</Link>
       </div>
     </motion.div>
@@ -426,7 +432,12 @@ function SeatMenu({ seat, state, onClose, run }: { seat: PublicSeat | null; stat
           </div>
         </div>
         <Link href={`/players/${seat.userId}`} className="block"><Button className="w-full">Voir le profil et les statistiques</Button></Link>
-        {state.me.isRoomAdmin && !isMe && (
+        {state.me.isRoomAdmin && seat.isBot && (
+          <Button className="w-full" onClick={async () => { if (await run('game:removeBot', { userId: seat.userId }, 'Le robot quitte la table')) onClose(); }}>
+            Retirer ce robot
+          </Button>
+        )}
+        {state.me.isRoomAdmin && !isMe && !seat.isBot && (
           <Button variant="danger" className="w-full" onClick={async () => { if (confirm(`Exclure ${seat.username} de la table ?`) && (await run('game:kick', { userId: seat.userId }, 'Joueur exclu'))) onClose(); }}>
             Exclure de la table
           </Button>

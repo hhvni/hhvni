@@ -304,7 +304,7 @@ function Seat({
 
       {/* Plaque nom + tapis */}
       <div className={cx('relative -mt-2 min-w-[84px] rounded-lg bg-gradient-to-b from-night-700/95 to-night-900/95 px-2.5 py-1 text-center shadow-lg ring-1 sm:min-w-[104px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
-        <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.username}</div>
+        <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && '🤖 '}{seat.username}</div>
         <div className="text-[11px] font-bold leading-tight tabular text-gold-300 sm:text-[13px]">
           {seat.allIn && seat.inHand ? 'TAPIS' : compact(seat.stack)}
         </div>

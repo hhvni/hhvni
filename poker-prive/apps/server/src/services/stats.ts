@@ -5,6 +5,7 @@
 import { aggregate } from '@poker/engine';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
+import { BOT_EMAIL_DOMAIN } from './bots.js';
 
 interface CounterRow {
   hands: bigint;
@@ -100,7 +101,7 @@ export async function leaderboard(opts: { userIds?: string[]; roomId?: string })
       (SELECT COUNT(*) FROM "HandPlayer" hp JOIN "Hand" h ON h.id = hp."handId" JOIN "Game" g2 ON g2.id = h."gameId"
         WHERE hp."userId" = u.id AND hp.won ${opts.roomId ? Prisma.sql`AND g2."roomId" = ${opts.roomId}` : Prisma.empty}) AS won
     FROM "User" u JOIN "GamePlayer" gp ON gp."userId" = u.id JOIN "Game" g ON g.id = gp."gameId"
-    WHERE u.banned = false ${userFilter} ${roomFilter}
+    WHERE u.banned = false AND u.email NOT LIKE ${'%' + BOT_EMAIL_DOMAIN} ${userFilter} ${roomFilter}
     GROUP BY u.id
     ORDER BY net DESC NULLS LAST
     LIMIT 100`;

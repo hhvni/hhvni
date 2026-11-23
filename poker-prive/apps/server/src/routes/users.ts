@@ -10,6 +10,7 @@ import { hashPassword, verifyPassword } from '../auth/password.js';
 import { hashToken, SESSION_COOKIE } from '../auth/sessions.js';
 import { isOnline } from '../realtime/socket.js';
 import { userStats } from '../services/stats.js';
+import { BOT_EMAIL_DOMAIN } from '../services/bots.js';
 import { UsernameSchema } from './auth.js';
 
 export const usersRouter = Router();
@@ -101,7 +102,7 @@ usersRouter.post('/me/refill', ah(async (req, res) => {
 usersRouter.get('/search', ah(async (req, res) => {
   const q = z.string().trim().min(2).max(20).parse(req.query.q);
   const users = await prisma.user.findMany({
-    where: { username: { contains: q, mode: 'insensitive' }, banned: false, NOT: { id: req.user!.id } },
+    where: { username: { contains: q, mode: 'insensitive' }, banned: false, NOT: [{ id: req.user!.id }, { email: { endsWith: BOT_EMAIL_DOMAIN } }] },
     select: { id: true, username: true, avatarUrl: true }, take: 10,
   });
   res.json({ users: users.map((u) => ({ ...u, online: isOnline(u.id) })) });

@@ -60,6 +60,7 @@ export interface PublicSeat {
   isSmallBlind: boolean;
   isBigBlind: boolean;
   pendingRebuy: boolean;
+  isBot: boolean;
 }
 
 export interface TurnInfo {

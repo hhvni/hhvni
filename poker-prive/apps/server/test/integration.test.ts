@@ -174,6 +174,9 @@ describe('Salons, invitations et cash game multijoueur', () => {
       for (const seat of st.seats) if (seat && seat.userId !== c.userId) expect(seat.cards).toEqual([null, null]);
     }
 
+    // Les tapis affichés tiennent compte des blinds déjà payées
+    const blinds = s.seats.filter((x) => x && x.streetBet > 0);
+    expect(blinds.every((x) => x!.stack + x!.streetBet === (x!.seat === 4 ? 8000 : 10000))).toBe(true);
     // Action hors tour refusée
     const notTurn = [alice, bob, carol].find((c) => c.userId !== s.turn!.userId)!;
     const r1 = await notTurn.emit('game:action', { gameId, type: 'call', seq: notTurn.state!.actionSeq });

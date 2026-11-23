@@ -16,6 +16,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import { env } from '../config.js';
 import { logger } from '../logger.js';
+import { decide, getBotUser } from '../services/bots.js';
 
 const FAST = env.FAST_MODE === '1';
 const fmt = (n: number) => n.toLocaleString('fr-FR');
@@ -51,6 +52,8 @@ interface PlayerMeta {
   rebuys: number;
   lastAction: string | null;
   kicked: boolean;
+  /** Robot de test piloté par le serveur */
+  bot?: boolean;
 }
 
 interface TournamentState {
@@ -327,6 +330,15 @@ export class GameRuntime {
     await this.refreshBankroll(userId);
     this.changed();
     this.maybeStartHand();
+  }
+
+  private async botReload(userId: string): Promise<void> {
+    try {
+      await prisma.user.updateMany({ where: { id: userId, chips: { lt: 1_000_000 } }, data: { chips: 1_000_000 } });
+      await this.reload(userId);
+    } catch {
+      await this.removeCashPlayer(userId);
+    }
   }
 
   setAway(userId: string, away: boolean): void {
@@ -804,7 +816,10 @@ export class GameRuntime {
         }
         const longGone = !m.connected && m.disconnectedAt && Date.now() - m.disconnectedAt > 10 * 60_000;
         if (m.leaveAfterHand || m.kicked || longGone) void this.removeCashPlayer(m.userId);
-        else if (this.table.seats[seat]!.stack === 0 && !m.away) {
+        else if (this.table.seats[seat]!.stack === 0 && m.bot) {
+          if (this.reloadAmountFor(m.userId) > 0) void this.botReload(m.userId);
+          else void this.removeCashPlayer(m.userId);
+        } else if (this.table.seats[seat]!.stack === 0 && !m.away) {
           // Joueur sans jetons : il reste assis (absent) et peut recharger
           this.table.setSittingOut(m.userId, true);
           m.away = true;
@@ -820,7 +835,7 @@ export class GameRuntime {
       const toEliminate: string[] = [];
       for (const id of busted) {
         const m = this.meta.get(id)!;
-        if (rebuyOpen && m.connected && !m.kicked) {
+        if (rebuyOpen && m.connected && !m.kicked && !m.bot) {
           m.pendingRebuyUntil = Date.now() + 20_000;
           this.table.setSittingOut(id, true);
           this.armRebuyTimer(id, 20_000);
@@ -886,6 +901,12 @@ export class GameRuntime {
     const m = this.meta.get(userId)!;
     this.turnStartedAt = Date.now();
     const seqAtSchedule = this.actionSeq;
+    if (m.bot && !m.kicked && !m.leaveAfterHand) {
+      const ms = FAST ? 5 : 900 + secureRand(1800);
+      this.turn = { seat, userId, deadline: Date.now() + this.config.actionSeconds * 1000, usingTimeBank: false, totalMs: this.config.actionSeconds * 1000 };
+      this.turnTimer = setTimeout(() => this.botAct(userId, seqAtSchedule), ms);
+      return;
+    }
     if (m.away || m.leaveAfterHand || m.kicked) {
       const ms = FAST ? 1 : 700;
       this.turn = { seat, userId, deadline: Date.now() + ms, usingTimeBank: false, totalMs: ms };
@@ -917,6 +938,56 @@ export class GameRuntime {
       }
     }
     this.applyAction(userId, 'fold', undefined, true);
+  }
+
+  // ═══════════════════════════ Robots ═══════════════════════════
+
+  private botAct(userId: string, seq: number): void {
+    if (this.disposed || seq !== this.actionSeq || this.table.currentPlayerId() !== userId) return;
+    const h = this.table.hand!;
+    const legal = this.table.legalActions(userId);
+    const p = h.players.find((x) => x.playerId === userId);
+    if (!legal || !p) return;
+    const d = decide(p.hole, h.board, legal, h.bigBlind);
+    try {
+      this.applyAction(userId, d.type, d.amount);
+    } catch {
+      this.applyAction(userId, 'fold', undefined, true); // filet de sécurité : jamais de blocage
+    }
+  }
+
+  /** Ajoute un robot de test (administrateurs du salon). */
+  async addBot(byUserId: string): Promise<void> {
+    if (!this.isRoomAdmin(byUserId)) throw new GameError('FORBIDDEN', 'Réservé aux administrateurs du salon');
+    if (this.status === 'FINISHED') throw new GameError('FINISHED', 'Partie terminée');
+    const used = [...this.meta.values()].filter((m) => m.bot).map((m) => m.userId);
+    if (this.config.mode === 'TOURNAMENT') {
+      if (this.status !== 'WAITING') throw new GameError('STARTED', 'Ajoutez les robots avant le début du tournoi');
+      if (this.registered.length >= this.config.maxSeats) throw new GameError('FULL', 'Tournoi complet');
+      const bot = await getBotUser(used, this.config.buyIn);
+      this.ensureMeta(bot).bot = true;
+      await this.register(bot);
+    } else {
+      const seat = this.table.seats.findIndex((s, i) => !s && !this.reservedSeats.has(i));
+      if (seat === -1) throw new GameError('FULL', 'Plus de place à cette table');
+      const buyIn = Math.min(Math.max(this.config.startingStack, this.config.minBuyIn), this.config.maxBuyIn);
+      const bot = await getBotUser(used.filter((id) => this.table.seatOf(id) !== -1), buyIn);
+      if (this.table.seatOf(bot.id) !== -1) throw new GameError('BUSY', 'Réessayez');
+      const meta = this.ensureMeta(bot);
+      meta.bot = true;
+      meta.kicked = false;
+      await this.sit(bot, seat, buyIn);
+    }
+    this.changed();
+  }
+
+  async removeBot(byUserId: string, botId: string): Promise<void> {
+    if (!this.isRoomAdmin(byUserId)) throw new GameError('FORBIDDEN', 'Réservé aux administrateurs du salon');
+    const m = this.meta.get(botId);
+    if (!m?.bot) throw new GameError('NOT_BOT', "Ce joueur n'est pas un robot");
+    if (this.config.mode === 'CASH') await this.standUp(botId);
+    else if (this.status === 'WAITING') await this.unregister(botId);
+    else throw new GameError('STARTED', 'Un robot ne peut pas quitter un tournoi en cours');
   }
 
   // ═══════════════════════════ Persistance ═══════════════════════════
@@ -1024,14 +1095,16 @@ export class GameRuntime {
         else if (hp.shown && (showdownIds.has(hp.playerId) || h!.events.some((e) => e.type === 'reveal' && e.hands.some((x) => x.playerId === hp.playerId)))) cards = [...hp.hole];
         else cards = [null, null];
       }
-      const displayStack = hp && h!.finished && !resultVisible ? hp.stack - (wonBy.get(hp.playerId) ?? 0) : s.stack;
+      // Pendant une main, le tapis vivant est celui de la main (mises déduites)
+      const displayStack = hp && !h!.finished ? hp.stack : hp && h!.finished && !resultVisible ? hp.stack - (wonBy.get(hp.playerId) ?? 0) : s.stack;
       return {
         seat: i, userId: s.playerId, username: s.name, avatarUrl: m?.avatarUrl ?? null, stack: displayStack,
         streetBet: live && hp ? hp.streetBet : 0, inHand: !!hp && !hp.folded, folded: !!hp?.folded, allIn: !!hp?.allIn,
-        sittingOut: s.sittingOut || !!m?.away, connected: m?.connected ?? false, cards, lastAction: m?.lastAction ?? null,
+        sittingOut: s.sittingOut || !!m?.away, connected: m?.bot ? true : (m?.connected ?? false), cards, lastAction: m?.lastAction ?? null,
         timeBank: Math.round((m?.timeBankMs ?? 0) / 1000), isButton: !!h && h.buttonSeat === i,
         isSmallBlind: !!h && h.sbSeat === i && !h.finished, isBigBlind: !!h && h.bbSeat === i && !h.finished,
         pendingRebuy: !!m?.pendingRebuyUntil,
+        isBot: !!m?.bot,
       };
     });
 
