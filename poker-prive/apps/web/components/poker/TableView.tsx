@@ -13,6 +13,7 @@ import { Badge, cx } from '../ui';
 import { ChipStack } from './Chips';
 import { PlayingCard } from './PlayingCard';
 import { VideoTile } from './VideoTile';
+import { FeltDecor } from './FeltDecor';
 
 interface Props {
   state: GameView;
@@ -21,7 +22,7 @@ interface Props {
   video: VideoChat;
   videoSize: number;
   showRemoteVideo: boolean;
-  feltTheme: 'green' | 'blue';
+  feltTheme: 'black' | 'green' | 'blue';
   onSit?: (seat: number) => void;
   onSeatMenu?: (seat: PublicSeat) => void;
 }
@@ -74,15 +75,27 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
   const ry = narrow ? 45.5 : 44;
 
   return (
-    <div className={cx('relative mx-auto w-full', narrow ? 'aspect-[0.66] max-h-[calc(100dvh-230px)]' : 'aspect-[2.05] max-h-[calc(100dvh-210px)]')} style={narrow ? undefined : { maxWidth: 'calc((100dvh - 210px) * 2.05)' }}>
+    <div
+      className={cx('relative mx-auto w-full transition-[max-height,max-width] duration-300', narrow ? 'aspect-[0.66]' : 'aspect-[2.05]')}
+      style={narrow
+        ? { maxHeight: `calc(100dvh - ${state.me.legal ? 345 : 262}px)`, maxWidth: `calc((100dvh - ${state.me.legal ? 345 : 262}px) * 0.66)` }
+        : { maxHeight: 'calc(100dvh - 210px)', maxWidth: 'calc((100dvh - 210px) * 2.05)' }}
+    >
       {/* Rail + tapis */}
-      <div className={cx('rail absolute rounded-[999px]', narrow ? 'inset-[7%_6%]' : 'inset-[9%_7%]')}>
-        <div className="felt absolute inset-[10px] overflow-hidden rounded-[999px] sm:inset-[14px]" data-theme={feltTheme}>
+      <div className={cx('rail absolute rounded-[999px]', narrow ? 'inset-[7%_6%]' : 'inset-[9%_7%]')} data-theme={feltTheme}>
+        <div className={cx('felt absolute overflow-hidden rounded-[999px]', narrow ? 'inset-[10px]' : 'inset-[14px]')} data-theme={feltTheme}>
           <div className="felt-texture absolute inset-0" />
-          <div className="absolute inset-[7%] rounded-[999px] border border-white/[0.07]" />
-          <div className="pointer-events-none absolute left-1/2 top-[24%] hidden -translate-x-1/2 select-none whitespace-nowrap font-display text-2xl font-bold tracking-[0.3em] text-white/[0.07] md:block">CERCLE PRIVÉ</div>
+          {feltTheme !== 'black' && (
+            <>
+              <div className="absolute inset-[7%] rounded-[999px] border border-white/[0.07]" />
+              <div className="pointer-events-none absolute left-1/2 top-[24%] hidden -translate-x-1/2 select-none whitespace-nowrap font-display text-2xl font-bold tracking-[0.3em] text-white/[0.07] md:block">CERCLE PRIVÉ</div>
+            </>
+          )}
         </div>
       </div>
+      {feltTheme === 'black' && (
+        <FeltDecor n={n} rotation={rotation} insetX={narrow ? 0.06 : 0.07} insetY={narrow ? 0.07 : 0.09} feltInset={narrow ? 10 : 14} seatRx={rx} seatRy={ry} />
+      )}
 
       {/* Centre : pot + board */}
       <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2 sm:gap-3">

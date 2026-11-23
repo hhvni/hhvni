@@ -17,14 +17,14 @@ import { MiniCards } from '@/components/poker/PlayingCard';
 import { StreamAudio } from '@/components/poker/VideoTile';
 import { Avatar, Badge, Button, cx, Modal, PageLoader, Select, Tabs, Toggle, useToast } from '@/components/ui';
 
-interface Prefs { sound: boolean; videoSize: number; showRemote: boolean; felt: 'green' | 'blue' }
-const DEFAULT_PREFS: Prefs = { sound: true, videoSize: 64, showRemote: true, felt: 'green' };
+interface Prefs { sound: boolean; videoSize: number; showRemote: boolean; felt: 'black' | 'green' | 'blue' }
+const DEFAULT_PREFS: Prefs = { sound: true, videoSize: 64, showRemote: true, felt: 'black' };
 
 function usePrefs(): [Prefs, (p: Partial<Prefs>) => void] {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('pp-table-prefs');
+      const raw = localStorage.getItem('pp-table-prefs-v2');
       if (raw) setPrefs({ ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) });
     } catch {
       /* stockage indisponible */
@@ -34,7 +34,7 @@ function usePrefs(): [Prefs, (p: Partial<Prefs>) => void] {
     setPrefs((old) => {
       const next = { ...old, ...p };
       try {
-        localStorage.setItem('pp-table-prefs', JSON.stringify(next));
+        localStorage.setItem('pp-table-prefs-v2', JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -166,7 +166,7 @@ function Game({ gameId }: { gameId: string }) {
         {/* Zone de jeu */}
         <main className="relative flex min-w-0 flex-1 flex-col">
           {t && state.status !== 'WAITING' && <TournamentHud state={state} now={now} />}
-          <div className="flex min-h-0 flex-1 items-center justify-center px-2 pt-2 sm:px-6">
+          <div className="flex min-h-0 flex-1 items-center justify-center px-2 pt-7 sm:px-6 md:pt-2">
             <TableView
               state={state}
               now={now}
@@ -242,7 +242,7 @@ function ControlStrip({ state, run, isAdmin, mySeat }: { state: GameView; run: R
   const seated = !!mySeat;
   const activePlayers = state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut).length;
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
+    <div className={cx('items-center gap-2 overflow-x-auto scroll-thin [&>*]:shrink-0 md:flex-wrap md:justify-center md:overflow-visible', state.me.legal ? 'hidden md:flex' : 'flex')}>
       {isAdmin && state.status === 'WAITING' && state.mode === 'CASH' && (
         <Button size="sm" variant="gold" onClick={() => run('game:start', {}, 'Table ouverte')}>Démarrer la partie</Button>
       )}
@@ -503,7 +503,10 @@ function VideoSettings({ open, onClose, video, prefs, setPrefs }: { open: boolea
         <div className="space-y-1 border-t border-white/6 pt-3">
           <Toggle label="Afficher la vidéo des autres joueurs" checked={prefs.showRemote} onChange={(v) => setPrefs({ showRemote: v })} />
           <Toggle label="Son « à vous de jouer »" checked={prefs.sound} onChange={(v) => setPrefs({ sound: v })} />
-          <Toggle label="Tapis bleu" hint="Sinon vert casino" checked={prefs.felt === 'blue'} onChange={(v) => setPrefs({ felt: v ? 'blue' : 'green' })} />
+        </div>
+        <div>
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">Tapis</span>
+          <Tabs value={prefs.felt} onChange={(v) => setPrefs({ felt: v })} items={[{ value: 'black', label: 'Noir & or' }, { value: 'green', label: 'Vert casino' }, { value: 'blue', label: 'Bleu nuit' }]} />
         </div>
       </div>
     </Modal>

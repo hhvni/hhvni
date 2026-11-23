@@ -107,13 +107,13 @@ export function ActionBar({ state, onAction }: Props) {
       )}
       {canAggro && !allInOnly && (
         <div className="space-y-2 rounded-2xl bg-night-900/85 p-2.5 ring-1 ring-white/8 backdrop-blur">
-          <div className="flex flex-wrap justify-center gap-1.5">
+          <div className="flex justify-start gap-1.5 overflow-x-auto scroll-thin md:flex-wrap md:justify-center">
             {sc.map((s) => (
-              <button key={s.label} onClick={() => setAmount(s.to)} className={cx('rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 transition', amount === s.to ? 'bg-gold-400/20 text-gold-300 ring-gold-400/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
+              <button key={s.label} onClick={() => setAmount(s.to)} className={cx('shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 transition', amount === s.to ? 'bg-gold-400/20 text-gold-300 ring-gold-400/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
                 {s.label}
               </button>
             ))}
-            <button onClick={() => setAmount(l.maxTo)} className={cx('rounded-lg px-2.5 py-1 text-xs font-semibold ring-1', amount === l.maxTo ? 'bg-danger/25 text-[#ffb3ba] ring-danger/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
+            <button onClick={() => setAmount(l.maxTo)} className={cx('shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1', amount === l.maxTo ? 'bg-danger/25 text-[#ffb3ba] ring-danger/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
               Tapis
             </button>
           </div>

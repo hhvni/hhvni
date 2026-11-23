@@ -94,6 +94,23 @@ body {
     inset 0 0 80px rgb(0 0 0 / 0.55),
     inset 0 2px 0 rgb(255 255 255 / 0.06);
 }
+.felt[data-theme='black'] {
+  --felt-a: #1c1c1f;
+  --felt-b: #0e0e10;
+  --felt-c: #050506;
+}
+.rail[data-theme='black'] {
+  background: linear-gradient(180deg, #2b2b2e 0%, #111113 45%, #050506 100%);
+  box-shadow:
+    0 30px 80px rgb(0 0 0 / 0.7),
+    0 0 0 1px rgb(217 173 79 / 0.35),
+    inset 0 2px 1px rgb(255 255 255 / 0.14),
+    inset 0 -6px 12px rgb(0 0 0 / 0.7);
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
 .felt[data-theme='blue'] {
   --felt-a: #1b4f8f;
   --felt-b: #123764;
