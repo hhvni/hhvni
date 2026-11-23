@@ -1,0 +1,264 @@
+// Modèle de données de la plateforme de poker privée.
+// Jetons strictement virtuels : aucune notion de dépôt, retrait ou monnaie réelle.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum RoomRole {
+  OWNER
+  ADMIN
+  PLAYER
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum GameMode {
+  CASH
+  TOURNAMENT
+}
+
+enum GameStatus {
+  WAITING
+  RUNNING
+  PAUSED
+  FINISHED
+}
+
+enum ChatKind {
+  USER
+  SYSTEM
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String
+  avatarUrl     String?
+  role          UserRole  @default(USER)
+  banned        Boolean   @default(false)
+  /// Solde de jetons virtuels (sans valeur monétaire)
+  chips         Int       @default(100000)
+  lastRefillAt  DateTime?
+  /// Temps de jeu cumulé (secondes)
+  playSeconds   Int       @default(0)
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+
+  sessions      Session[]
+  memberships   RoomMember[]
+  ownedRooms    Room[]         @relation("RoomOwner")
+  sentFriends   Friendship[]   @relation("FriendRequester")
+  gotFriends    Friendship[]   @relation("FriendAddressee")
+  gamePlayers   GamePlayer[]
+  handPlayers   HandPlayer[]
+  messages      ChatMessage[]
+  invitesSent   Invitation[]   @relation("InviteFrom")
+  invitesGot    Invitation[]   @relation("InviteTo")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// SHA-256 du jeton (le jeton brut n'est jamais stocké)
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+  ip        String?
+
+  @@index([userId])
+}
+
+model Friendship {
+  id          String       @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+model Room {
+  id           String       @id @default(cuid())
+  name         String
+  ownerId      String
+  owner        User         @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  passwordHash String?
+  inviteCode   String       @unique
+  maxPlayers   Int          @default(9)
+  /// Règles libres du salon (texte affiché aux membres)
+  rules        String       @default("")
+  createdAt    DateTime     @default(now())
+
+  members      RoomMember[]
+  games        Game[]
+  messages     ChatMessage[]
+  invitations  Invitation[]
+}
+
+model RoomMember {
+  id       String   @id @default(cuid())
+  roomId   String
+  userId   String
+  role     RoomRole @default(PLAYER)
+  banned   Boolean  @default(false)
+  joinedAt DateTime @default(now())
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  roomId    String
+  fromId    String
+  toId      String
+  gameId    String?
+  createdAt DateTime @default(now())
+  seen      Boolean  @default(false)
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  from      User     @relation("InviteFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User     @relation("InviteTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([toId])
+}
+
+model Game {
+  id         String     @id @default(cuid())
+  roomId     String
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name       String
+  mode       GameMode
+  status     GameStatus @default(WAITING)
+  /// Paramètres validés (voir GameConfigSchema côté serveur)
+  config     Json
+  /// État complet de la table pour reprise après redémarrage (serveur uniquement)
+  snapshot   Json?
+  createdById String
+  createdAt  DateTime   @default(now())
+  startedAt  DateTime?
+  endedAt    DateTime?
+
+  players    GamePlayer[]
+  hands      Hand[]
+  messages   ChatMessage[]
+
+  @@index([roomId])
+}
+
+model GamePlayer {
+  id         String    @id @default(cuid())
+  gameId     String
+  userId     String
+  game       Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Total de jetons achetés (cave + recharges + rebuys + add-ons)
+  buyIn      Int       @default(0)
+  /// Total de jetons récupérés en quittant la table (cash) ou gains (tournoi)
+  cashOut    Int       @default(0)
+  stack      Int       @default(0)
+  place      Int?
+  prize      Int       @default(0)
+  rebuys     Int       @default(0)
+  addons     Int       @default(0)
+  handsPlayed Int      @default(0)
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+
+  @@unique([gameId, userId])
+  @@index([userId])
+}
+
+model Hand {
+  id          String   @id @default(cuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  handNumber  Int
+  board       String[]
+  /// Journal complet des événements publics de la main
+  events      Json
+  potTotal    Int
+  startedAt   DateTime
+  endedAt     DateTime @default(now())
+  players     HandPlayer[]
+
+  @@unique([gameId, handNumber])
+  @@index([gameId])
+}
+
+model HandPlayer {
+  id                  String  @id @default(cuid())
+  handId              String
+  userId              String
+  hand                Hand    @relation(fields: [handId], references: [id], onDelete: Cascade)
+  user                User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seat                Int
+  holeCards           String[]
+  /// Cartes montrées publiquement (showdown / all-in)
+  shown               Boolean @default(false)
+  net                 Int
+  won                 Boolean
+  vpip                Boolean
+  pfr                 Boolean
+  threeBetOpportunity Boolean
+  threeBet            Boolean
+  sawFlop             Boolean
+  wentToShowdown      Boolean
+  wonAtShowdown       Boolean
+  postflopBets        Int
+  postflopRaises      Int
+  postflopCalls       Int
+
+  @@unique([handId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  gameId    String?
+  userId    String?
+  kind      ChatKind @default(USER)
+  text      String
+  createdAt DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  game      Game?    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt])
+  @@index([gameId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  type      String
+  userId    String?
+  targetId  String?
+  data      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([type, createdAt])
+}
