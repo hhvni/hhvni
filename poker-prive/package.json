@@ -1,0 +1,22 @@
+{
+  "name": "poker-prive",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Plateforme de poker privée entre amis (Texas Hold'em No-Limit, jetons virtuels uniquement)",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build": "npm run build -w @poker/engine && npm run build -w @poker/server && npm run build -w @poker/web",
+    "test": "npm run test -w @poker/engine && npm run test -w @poker/server",
+    "dev": "npm run build -w @poker/engine && concurrently -n server,web -c blue,green \"npm run dev -w @poker/server\" \"npm run dev -w @poker/web\"",
+    "start": "concurrently -n server,web \"npm run start -w @poker/server\" \"npm run start -w @poker/web\"",
+    "db:migrate": "npm run db:migrate -w @poker/server",
+    "db:deploy": "npm run db:deploy -w @poker/server",
+    "loadtest": "npm run loadtest -w @poker/server",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1",
+    "typescript": "5.8.3"
+  },
+  "engines": { "node": ">=20" }
+}
