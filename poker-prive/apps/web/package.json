@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "echo 'Le front est servi par le serveur (npm run dev à la racine)'",
     "build": "next build",
-    "start": "echo 'Le front est servi par le serveur (npm start à la racine)'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

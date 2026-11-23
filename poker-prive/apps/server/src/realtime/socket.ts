@@ -151,7 +151,7 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
     const on = <T>(event: string, schema: z.ZodType<T>, handler: (data: T) => Promise<unknown> | unknown) => {
       socket.on(event, async (payload: unknown, ack?: (r: unknown) => void) => {
         const reply = typeof ack === 'function' ? ack : () => undefined;
-        if (!take(socket.data.bucket, 15, 30)) return reply({ ok: false, error: 'Trop de requêtes, ralentissez' });
+        if (!take(socket.data.bucket, 15, 30)) return reply({ ok: false, error: 'Trop de requêtes, ralentissez', code: 'RATE' });
         const parsed = schema.safeParse(payload);
         if (!parsed.success) return reply({ ok: false, error: 'Requête invalide' });
         try {

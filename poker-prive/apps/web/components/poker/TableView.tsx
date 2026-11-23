@@ -127,7 +127,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
 
       {/* Bouton dealer */}
       {state.buttonSeat >= 0 && (() => {
-        const p = ellipse(displayIndex(state.buttonSeat) + 0.32, n, narrow ? 31 : 35, narrow ? 34 : 31);
+        const p = ellipse(displayIndex(state.buttonSeat) + 0.3, n, narrow ? 27 : 35, narrow ? 29 : 31);
         return (
           <motion.div layout className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-b from-white to-[#d7dbe3] text-[11px] font-black text-night-950 shadow-[0_2px_6px_rgba(0,0,0,0.6)] ring-1 ring-black/20" style={{ left: `${p.x}%`, top: `${p.y}%` }} transition={{ type: 'spring', damping: 20 }}>
             D

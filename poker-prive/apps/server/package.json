@@ -10,7 +10,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "loadtest": "tsx test/loadtest.ts",
+    "loadtest": "NODE_ENV=test FAST_MODE=1 SERVE_WEB=0 LOG_LEVEL=warn DATABASE_URL=${LOADTEST_DATABASE_URL:-postgresql://poker:poker@localhost:5432/poker_test} tsx test/loadtest.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate"

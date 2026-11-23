@@ -103,7 +103,7 @@ function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm text-muted">Bonsoir,</p>
+          <p className="text-sm text-muted">{new Date().getHours() >= 18 || new Date().getHours() < 5 ? 'Bonsoir' : 'Bonjour'},</p>
           <h1 className="font-display text-3xl font-bold">{me?.username}</h1>
         </div>
         <div className="flex gap-2">
