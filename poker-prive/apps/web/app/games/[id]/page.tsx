@@ -151,7 +151,9 @@ function Game({ gameId }: { gameId: string }) {
             {state.spectators > 0 && ` · ${state.spectators} spectateur${state.spectators > 1 ? 's' : ''}`}
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <TableMenu state={state} run={run} isAdmin={isAdmin} mySeat={mySeat} onHistory={() => setHistoryOpen(true)} />
+          <ReactionsButton run={run} />
           <BBToggle />
           <IconButton title={video.micOn ? 'Couper le micro' : 'Activer le micro'} active={video.micOn} onClick={() => void video.enableMic(!video.micOn)}>
             {video.micOn ? <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" /> : <path d="M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.6M17 16.9A7 7 0 0 1 5 12v-2M19 10v2a7 7 0 0 1-.1 1.2M12 19v3" />}
@@ -162,7 +164,7 @@ function Game({ gameId }: { gameId: string }) {
           <IconButton title="Réglages vidéo et table" onClick={() => setVideoOpen(true)}>
             <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 13.6H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10.4 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
           </IconButton>
-          <IconButton title="Historique des mains" onClick={() => setHistoryOpen(true)}>
+          <IconButton title="Historique des mains" className="hidden sm:block" onClick={() => setHistoryOpen(true)}>
             <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 3" />
           </IconButton>
           <IconButton title="Discussion et journal" className="lg:hidden" onClick={() => setPanelOpen(true)}>
@@ -175,6 +177,7 @@ function Game({ gameId }: { gameId: string }) {
         {/* Zone de jeu */}
         <main className="relative flex min-w-0 flex-1 flex-col">
           {t && state.status !== 'WAITING' && <TournamentHud state={state} now={now} />}
+          <PrimaryActions state={state} run={run} isAdmin={isAdmin} mySeat={mySeat} />
           <div className="flex min-h-0 flex-1 items-center justify-center px-2 pt-7 sm:px-6 md:pt-2">
             <TableView
               state={state}
@@ -195,7 +198,6 @@ function Game({ gameId }: { gameId: string }) {
 
           {/* Barre de contrôle */}
           <div className="z-20 shrink-0 space-y-2 px-2 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-1 sm:px-4">
-            <ControlStrip state={state} run={run} isAdmin={isAdmin} mySeat={mySeat} />
             <ActionBar state={state} onAction={onAction} />
           </div>
         </main>
@@ -237,7 +239,7 @@ function BBToggle() {
       onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
       title={bbMode ? 'Afficher les montants en jetons' : 'Afficher les montants en grosses blindes'}
       aria-label={bbMode ? 'Afficher les montants en jetons' : 'Afficher les montants en grosses blindes'}
-      className={cx('rounded-lg px-2 py-1.5 text-xs font-bold transition', bbMode ? 'bg-gold-400/20 text-gold-300 ring-1 ring-gold-400/50' : 'text-muted ring-1 ring-white/10 hover:text-ink')}
+      className={cx('hidden rounded-lg px-2 py-1.5 text-xs font-bold transition sm:block', bbMode ? 'bg-gold-400/20 text-gold-300 ring-1 ring-gold-400/50' : 'text-muted ring-1 ring-white/10 hover:text-ink')}
     >
       BB
     </button>
@@ -246,7 +248,7 @@ function BBToggle() {
 
 function IconButton({ children, title, onClick, active, className }: { children: React.ReactNode; title: string; onClick: () => void; active?: boolean; className?: string }) {
   return (
-    <button onClick={onClick} title={title} aria-label={title} className={cx('rounded-lg p-2 transition', active ? 'bg-success/15 text-success' : 'text-muted hover:bg-white/5 hover:text-ink', className)}>
+    <button onClick={onClick} title={title} aria-label={title} className={cx('rounded-lg p-1.5 transition sm:p-2', active ? 'bg-success/15 text-success' : 'text-muted hover:bg-white/5 hover:text-ink', className)}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
     </button>
   );
@@ -261,50 +263,78 @@ function StatusBadge({ status }: { status: GameView['status'] }) {
 
 type Run = (event: string, payload?: Record<string, unknown>, success?: string) => Promise<boolean>;
 
-/** Bandeau contextuel : démarrage, recharge, absence, départ, commandes admin, réactions. */
-function ControlStrip({ state, run, isAdmin, mySeat }: { state: GameView; run: Run; isAdmin: boolean; mySeat: PublicSeat | null }) {
-  const [reactOpen, setReactOpen] = useState(false);
-  const seated = !!mySeat;
+/** Boutons importants du moment, affichés discrètement en haut à droite de la table. */
+function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run: Run; isAdmin: boolean; mySeat: PublicSeat | null }) {
   const activePlayers = state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut).length;
+  const items: React.ReactNode[] = [];
+  if (isAdmin && state.status === 'WAITING' && state.mode === 'CASH') items.push(<Button key="start" size="sm" variant="gold" onClick={() => run('game:start', {}, 'Table ouverte')}>Démarrer la partie</Button>);
+  if (isAdmin && state.status === 'PAUSED') items.push(<Button key="resume" size="sm" variant="gold" onClick={() => run('game:start', {})}>Reprendre la partie</Button>);
+  if (state.me.canReload) items.push(<Button key="reload" size="sm" variant="gold" onClick={() => run('game:reload', {}, 'Jetons rechargés')}>Recharger {fmt(state.me.reloadAmount)}</Button>);
+  if (state.me.canAddon) items.push(<Button key="addon" size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>);
+  if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
+  if (state.me.leavingAfterHand) items.push(<Badge key="leaving">Départ après la main</Badge>);
+  if (state.status === 'RUNNING' && activePlayers < 2) items.push(<span key="wait" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>);
+  if (state.status === 'WAITING' && state.mode === 'CASH' && !isAdmin) items.push(<span key="w2" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">L&apos;administrateur va démarrer la partie.</span>);
+  if (items.length === 0) return null;
+  return <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-2 sm:right-4 sm:top-4">{items}</div>;
+}
+
+/** Menu « ⋯ » de l'en-tête : commandes de la table et de la place. */
+function TableMenu({ state, run, isAdmin, mySeat, onHistory }: { state: GameView; run: Run; isAdmin: boolean; mySeat: PublicSeat | null; onHistory: () => void }) {
+  const [open, setOpen] = useState(false);
+  const entries: { label: string; onClick: () => void; danger?: boolean }[] = [];
+  const live = state.status !== 'FINISHED';
+  if (mySeat && live) {
+    if (!mySeat.sittingOut) entries.push({ label: "M'absenter", onClick: () => run('game:away', { away: true }) });
+    if (state.mode === 'CASH' && !state.me.leavingAfterHand) entries.push({ label: 'Quitter la table', onClick: () => run('game:stand', {}) });
+  }
+  if (isAdmin && live) {
+    if (state.mode === 'CASH' && state.seats.some((s) => !s)) entries.push({ label: '🤖 Ajouter un robot', onClick: () => run('game:addBot', {}, 'Robot ajouté') });
+    if (state.status === 'RUNNING') entries.push({ label: 'Mettre en pause', onClick: () => run('game:pause', {}) });
+    if (state.mode === 'CASH') entries.push({ label: 'Fermer la table', danger: true, onClick: () => { if (confirm('Fermer la table ? Chaque joueur récupère ses jetons.')) void run('game:close', {}); } });
+  }
+  entries.push({ label: 'Historique des mains', onClick: onHistory });
   return (
-    <div className={cx('items-center gap-2 overflow-x-auto scroll-thin [&>*]:shrink-0 md:flex-wrap md:justify-center md:overflow-visible', state.me.legal ? 'hidden md:flex' : 'flex')}>
-      {isAdmin && state.status === 'WAITING' && state.mode === 'CASH' && (
-        <Button size="sm" variant="gold" onClick={() => run('game:start', {}, 'Table ouverte')}>Démarrer la partie</Button>
-      )}
-      {isAdmin && state.status === 'RUNNING' && <Button size="sm" variant="ghost" onClick={() => run('game:pause', {})}>Pause</Button>}
-      {isAdmin && state.status === 'PAUSED' && <Button size="sm" variant="gold" onClick={() => run('game:start', {})}>Reprendre</Button>}
-      {isAdmin && state.mode === 'CASH' && state.status !== 'FINISHED' && (
-        <Button size="sm" variant="subtle" onClick={() => confirm('Fermer la table ? Chaque joueur récupère ses jetons.') && run('game:close', {})}>Fermer la table</Button>
-      )}
-      {isAdmin && state.mode === 'CASH' && state.status !== 'FINISHED' && state.seats.some((s) => !s) && (
-        <Button size="sm" variant="ghost" onClick={() => run('game:addBot', {}, 'Robot ajouté')}>🤖 Ajouter un robot</Button>
-      )}
-      {state.status === 'RUNNING' && activePlayers < 2 && <span className="text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>}
-      {state.status === 'WAITING' && state.mode === 'CASH' && !isAdmin && <span className="text-xs text-muted">L&apos;administrateur va démarrer la partie.</span>}
-      {state.me.canReload && <Button size="sm" variant="gold" onClick={() => run('game:reload', {}, 'Jetons rechargés')}>Recharger {fmt(state.me.reloadAmount)}</Button>}
-      {state.me.canAddon && <Button size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>}
-      {seated && state.status !== 'FINISHED' && (
-        mySeat!.sittingOut && !mySeat!.pendingRebuy ? (
-          <Button size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>
-        ) : (
-          <Button size="sm" variant="subtle" onClick={() => run('game:away', { away: true })}>M&apos;absenter</Button>
-        )
-      )}
-      {seated && state.mode === 'CASH' && (
-        state.me.leavingAfterHand ? <Badge>Départ après la main</Badge> : <Button size="sm" variant="subtle" onClick={() => run('game:stand', {})}>Quitter la table</Button>
-      )}
-      <div className="relative">
-        <Button size="sm" variant="subtle" onClick={() => setReactOpen((x) => !x)} aria-label="Réactions">😀</Button>
-        <AnimatePresence>
-          {reactOpen && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute bottom-10 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-xl bg-night-800 p-1.5 shadow-2xl ring-1 ring-white/10">
-              {REACTIONS.map((e) => (
-                <button key={e} className="rounded-lg p-1 text-xl hover:bg-white/10" onClick={() => { void run('chat:react', { emoji: e }); setReactOpen(false); }}>{e}</button>
+    <div className="relative">
+      <button onClick={() => setOpen((x) => !x)} className={cx('rounded-lg px-2.5 py-1.5 text-xs font-semibold ring-1 transition', open ? 'bg-white/10 text-ink ring-white/20' : 'text-muted ring-white/10 hover:text-ink')} aria-haspopup="menu" aria-expanded={open}>
+        ⋯<span className="hidden sm:inline"> Table</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <motion.div role="menu" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="absolute right-0 top-10 z-50 min-w-[200px] overflow-hidden rounded-xl bg-night-800 py-1 shadow-2xl ring-1 ring-white/10">
+              {entries.map((e) => (
+                <button key={e.label} role="menuitem" onClick={() => { setOpen(false); e.onClick(); }} className={cx('block w-full px-4 py-2.5 text-left text-sm hover:bg-white/5', e.danger ? 'text-danger' : 'text-ink')}>
+                  {e.label}
+                </button>
               ))}
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Réactions émoji (en-tête). */
+function ReactionsButton({ run }: { run: Run }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((x) => !x)} className="rounded-lg p-1.5 text-base hover:bg-white/5" aria-label="Réactions" title="Réactions">😀</button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute right-0 top-10 z-50 flex gap-1 rounded-xl bg-night-800 p-1.5 shadow-2xl ring-1 ring-white/10">
+              {REACTIONS.map((e) => (
+                <button key={e} className="rounded-lg p-1 text-xl hover:bg-white/10" onClick={() => { void run('chat:react', { emoji: e }); setOpen(false); }}>{e}</button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
