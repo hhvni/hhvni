@@ -17,7 +17,6 @@ import { ActionBar } from '@/components/poker/ActionBar';
 import { ChatBox } from '@/components/poker/ChatBox';
 import { MiniCards } from '@/components/poker/PlayingCard';
 import { StreamAudio } from '@/components/poker/VideoTile';
-import { CelebrationOverlay, useCelebration } from '@/components/poker/Celebration';
 import { HudStats, LastHandModal, NoteEditor, useHud, usePlayerNotes, type PlayerNote } from '@/components/poker/TableExtras';
 import { Avatar, Badge, Button, cx, Modal, PageLoader, Select, Tabs, Toggle, useToast } from '@/components/ui';
 
@@ -173,11 +172,6 @@ function Game({ gameId }: { gameId: string }) {
     return r.ok;
   }, [send, state, toast]);
 
-  const celebration = useCelebration(state);
-  useEffect(() => {
-    if (celebration && prefs.sound) sounds.fanfare(celebration.kind === 'monster' ? 'monster' : celebration.kind === 'badbeat' ? 'badbeat' : 'big');
-  }, [celebration, prefs.sound]);
-
   if (error) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
@@ -267,8 +261,6 @@ function Game({ gameId }: { gameId: string }) {
               notes={notes}
             />
           </div>
-
-          <CelebrationOverlay c={celebration} />
 
           <AnimatePresence>
             {state.mode === 'TOURNAMENT' && state.status === 'WAITING' && <TournamentLobby state={state} run={run} />}

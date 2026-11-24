@@ -248,7 +248,7 @@ function play(name: string, { at = 0, gain = 0.6, pan = 0, rate = 1 }: { at?: nu
   src.start(c.currentTime + at);
 }
 
-/** Petite note de synthèse (signaux d'interface : « à vous », tic-tac, fanfare). */
+/** Petite note de synthèse (signaux d'interface : « à vous », tic-tac). */
 function tone(at: number, freq: number, dur: number, gain: number, type: OscillatorType = 'sine', slideTo?: number) {
   const c = audio();
   if (!c || !master) return;
@@ -306,18 +306,5 @@ export const sounds = {
   reveal: () => {
     play('flip', { gain: 0.8, rate: 0.85 });
     tone(0.12, 523, 0.5, 0.04, 'triangle');
-  },
-  /** Fanfare des grands moments (gros pot, carré, quinte flush, bad beat). */
-  fanfare: (kind: 'big' | 'monster' | 'badbeat') => {
-    if (kind === 'badbeat') {
-      tone(0, 392, 0.35, 0.09, 'triangle', 370);
-      tone(0.32, 349, 0.35, 0.09, 'triangle', 330);
-      tone(0.64, 294, 0.8, 0.1, 'triangle', 262);
-      return;
-    }
-    const notes = kind === 'monster' ? [523, 659, 784, 1047, 1319] : [523, 659, 784, 1047];
-    notes.forEach((f, i) => tone(i * 0.11, f, 0.45, 0.07, 'triangle'));
-    tone(notes.length * 0.11, notes.at(-1)! * 1.5, 0.9, 0.05, 'sine');
-    play('rake', { at: 0.2, gain: 0.6 });
   },
 };
