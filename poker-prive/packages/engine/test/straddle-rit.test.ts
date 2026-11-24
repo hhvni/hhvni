@@ -124,6 +124,16 @@ describe('Run it twice', () => {
       }
       expect(t.hand!.finished).toBe(true);
       expect(total(t)).toBe(before);
+      // Aucune carte en double : les nouvelles cartes du 2e board viennent du reste du paquet,
+      // jamais des mains des joueurs ni du 1er board
+      const h = t.hand!;
+      if (h.board2) {
+        const shared = h.runFrom ?? 0;
+        expect(h.board2.slice(0, shared)).toEqual(h.board.slice(0, shared));
+        const all = [...h.players.flatMap((p) => p.hole), ...h.board, ...h.board2.slice(shared)];
+        expect(new Set(all).size).toBe(all.length);
+        expect(h.board2.length).toBe(5);
+      }
     }
   });
 });

@@ -182,19 +182,26 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
             );
           })}
         </div>
-        {/* Second board (run it twice) */}
+        {/* Second board (run it twice) : seules les nouvelles cartes, alignées sous celles qu'elles remplacent */}
         {state.board2 && (
-          <div className="flex items-center gap-1 sm:gap-1.5">
-            <span className="mr-1 rounded bg-gold-400/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-300">2ᵉ board</span>
+          <div className="relative flex gap-1 sm:gap-1.5">
+            <span className="absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap rounded bg-gold-400/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-300">2ᵉ board</span>
             {Array.from({ length: 5 }, (_, i) => {
               const c = state.board2![i];
+              const shared = !!c && state.board[i] === c;
               return (
-                <div key={i} className="relative rounded-[6px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 30 : 40, height: narrow ? 42 : 56 }}>
+                <div
+                  key={i}
+                  className={cx('relative rounded-[7px]', !shared && 'bg-black/15 ring-1 ring-gold-400/15')}
+                  style={{ width: narrow ? 36 : 50, height: narrow ? 50 : 70 }}
+                  title={shared ? 'Carte commune aux deux boards (voir au-dessus)' : undefined}
+                >
+                  {shared && <div className="absolute inset-x-2 top-1/2 h-px bg-white/10" />}
                   <AnimatePresence>
-                    {!c && i === 4 && state.suspense === 2 && <SuspenseCard size={narrow ? 'xs' : 'sm'} />}
-                    {c && (
+                    {!c && i === 4 && state.suspense === 2 && <SuspenseCard size={narrow ? 'sm' : 'md'} />}
+                    {c && !shared && (
                       <motion.div key={`b2-${state.handNumber}-${c}`} className="absolute inset-0" {...cardAnim(i, runoutView)}>
-                        <PlayingCard card={c} size={narrow ? 'xs' : 'sm'} highlight={showdown.b2.has(c)} dim={hasShowdown && !showdown.b2.has(c)} className={cx('transition-[translate] duration-300', showdown.b2.has(c) && '-translate-y-1.5')} />
+                        <PlayingCard card={c} size={narrow ? 'sm' : 'md'} highlight={showdown.b2.has(c)} dim={hasShowdown && !showdown.b2.has(c)} className={cx('transition-[translate] duration-300', showdown.b2.has(c) && '-translate-y-1.5')} />
                       </motion.div>
                     )}
                   </AnimatePresence>

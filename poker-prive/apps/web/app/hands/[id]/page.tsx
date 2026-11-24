@@ -186,9 +186,18 @@ function Replay() {
             ))}
           </div>
           {f.board2 && (
-            <div className="relative flex items-center gap-1">
-              <span className="mr-1 text-[10px] font-bold uppercase text-gold-300">2ᵉ board</span>
-              {f.board2.map((c) => <PlayingCard key={c} card={c} size="sm" />)}
+            <div className="relative flex gap-1.5">
+              <span className="absolute right-full top-1/2 mr-2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold uppercase text-gold-300">2ᵉ board</span>
+              {Array.from({ length: 5 }, (_, i) => {
+                const c = f.board2![i];
+                const shared = !!c && f.board[i] === c;
+                return (
+                  <div key={i} className={`relative h-[70px] w-[50px] rounded-[7px] ${shared ? '' : 'bg-black/15 ring-1 ring-gold-400/15'}`}>
+                    {shared && <div className="absolute inset-x-2 top-1/2 h-px bg-white/10" />}
+                    {c && !shared && <PlayingCard card={c} />}
+                  </div>
+                );
+              })}
             </div>
           )}
           <motion.p key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative text-center text-sm font-semibold text-white">{f.text}</motion.p>

@@ -225,7 +225,7 @@ export function LastHandModal({ open, onClose, gameId }: { open: boolean; onClos
   const streets = useMemo(() => (hand ? summarize(hand) : []), [hand]);
   const board2 = useMemo(() => {
     const e = hand?.events.find((x): x is Extract<HandEvent, { type: 'secondBoard' }> => x.type === 'secondBoard');
-    return e?.board ?? null;
+    return e?.cards ?? null; // seulement les nouvelles cartes (les communes sont sur le 1er board)
   }, [hand]);
 
   return (
@@ -243,7 +243,7 @@ export function LastHandModal({ open, onClose, gameId }: { open: boolean; onClos
             <>
               <div className="flex flex-col items-center gap-1.5">
                 {hand.board.length ? <MiniCards cards={hand.board} size="sm" /> : <span className="text-xs text-faint">Pas de flop</span>}
-                {board2 && <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase text-gold-300">2ᵉ board</span><MiniCards cards={board2} /></div>}
+                {board2 && <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase text-gold-300">2ᵉ board :</span><MiniCards cards={board2} /></div>}
                 <span className="text-xs text-muted">Pot total <span className="font-semibold tabular text-gold-300">{money(hand.potTotal)}</span></span>
               </div>
 
