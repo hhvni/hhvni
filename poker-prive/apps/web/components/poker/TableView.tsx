@@ -6,7 +6,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { evaluateBest, isCard, type Card, type GameView, type PublicSeat } from '@poker/engine';
-import { useMoney } from '@/lib/displayPrefs';
+import { setDisplayPrefs, useDisplayPrefs, useMoney } from '@/lib/displayPrefs';
 import type { Reaction } from '@/lib/useGame';
 import type { VideoChat } from '@/lib/useVideoChat';
 import { Badge, cx } from '../ui';
@@ -130,9 +130,11 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
       {/* Mises devant les joueurs */}
       {seatsList.map(({ s, i }) => {
         if (!s || s.streetBet <= 0) return null;
-        const p = ellipse(displayIndex(i), n, narrow ? 22 : 30, narrow ? 21 : 27);
+        // Le joueur du bas a de grandes cartes au-dessus de son avatar : sa mise est placée plus haut
+        const bottom = displayIndex(i) === 0;
+        const p = ellipse(displayIndex(i), n, narrow ? 22 : 30, bottom ? (narrow ? 13 : 16) : narrow ? 19 : 23);
         return (
-          <div key={`bet-${i}`} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
+          <div key={`bet-${i}`} className="absolute z-[25] -translate-x-1/2 -translate-y-1/2" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
             <ChipStack amount={s.streetBet} size={narrow ? 14 : 18} />
           </div>
         );
@@ -201,13 +203,19 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
 
 function PotsDisplay({ state }: { state: GameView }) {
   const money = useMoney();
+  const { bbMode } = useDisplayPrefs();
   if (state.totalPot <= 0) return <div className="h-7" />;
   const pots = state.pots;
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="rounded-full bg-black/45 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/10 sm:text-sm">
+      <button
+        type="button"
+        onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
+        title={bbMode ? 'Afficher en jetons' : 'Afficher en grosses blindes'}
+        className="rounded-full bg-black/45 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/10 hover:ring-gold-400/40 sm:text-sm"
+      >
         Pot <span className="tabular text-gold-300">{money(state.totalPot, true)}</span>
-      </div>
+      </button>
       {pots.length > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-2">
           {pots.map((p, i) => (
@@ -261,6 +269,7 @@ function Seat({
   onMenu?: (s: PublicSeat) => void;
   bottom: boolean;
 }) {
+  const { bbMode } = useDisplayPrefs();
   const money = useMoney();
   const turn = state.turn?.userId === seat.userId ? state.turn : null;
   const remote = video.remote.find((r) => r.userId === seat.userId);
@@ -320,9 +329,14 @@ function Seat({
       {/* Plaque nom + tapis */}
       <div className={cx('relative -mt-2 min-w-[84px] rounded-lg bg-gradient-to-b from-night-700/95 to-night-900/95 px-2.5 py-1 text-center shadow-lg ring-1 sm:min-w-[104px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
         <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && '🤖 '}{seat.username}</div>
-        <div className="text-[11px] font-bold leading-tight tabular text-gold-300 sm:text-[13px]">
+        <button
+          type="button"
+          onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
+          title={bbMode ? 'Afficher en jetons' : 'Afficher en grosses blindes'}
+          className="block w-full cursor-pointer text-[11px] font-bold leading-tight tabular text-gold-300 hover:brightness-125 sm:text-[13px]"
+        >
           {seat.allIn && seat.inHand ? 'TAPIS' : money(seat.stack)}
-        </div>
+        </button>
         <div className="absolute -right-2 -top-2 flex gap-0.5">
           {seat.isSmallBlind && <span className="rounded bg-info/90 px-1 text-[9px] font-bold text-white">SB</span>}
           {seat.isBigBlind && <span className="rounded bg-gold-500 px-1 text-[9px] font-bold text-night-950">BB</span>}
