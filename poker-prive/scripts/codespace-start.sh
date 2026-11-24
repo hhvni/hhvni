@@ -16,4 +16,6 @@ for i in $(seq 1 60); do
   curl -s http://localhost:3000/api/health >/dev/null && { echo "✔ Site en ligne : $PUBLIC_URL"; exit 0; }
   sleep 2
 done
-echo "Le site met du temps à démarrer. Journal : /tmp/cercle-prive.log"
+echo "✘ Le site ne répond pas. Dernières lignes du journal :"
+tail -25 /tmp/cercle-prive.log
+echo "Envoie une capture d'écran de ce terminal pour obtenir de l'aide."
