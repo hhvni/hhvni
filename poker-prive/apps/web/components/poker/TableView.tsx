@@ -419,8 +419,9 @@ function Seat({
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hud = useHud(hover && !isMe ? seat.userId : null, state.roomId);
   const hint = useMemo(
-    () => (isMe && handHint && !state.result && seat.inHand && !seat.folded ? describeHand(state.me.cards, state.board) : null),
-    [isMe, handHint, state.result, seat.inHand, seat.folded, state.me.cards, state.board],
+    // Pendant le déroulé d'un tapis, l'étiquette révélerait la river avant la carte : masquée
+    () => (isMe && handHint && !state.result && !state.equity && !state.suspense && seat.inHand && !seat.folded ? describeHand(state.me.cards, state.board) : null),
+    [isMe, handHint, state.result, state.equity, state.suspense, seat.inHand, seat.folded, state.me.cards, state.board],
   );
   const turn = state.turn?.userId === seat.userId ? state.turn : null;
   const remote = video.remote.find((r) => r.userId === seat.userId);

@@ -77,6 +77,8 @@ interface Staging {
   visible2?: number | null;
   /** River encore face cachée (suspense) sur le board 1 ou 2. */
   suspense?: 1 | 2 | null;
+  /** Probabilités encore affichées pour l'étape précédente, le temps que la carte se dévoile. */
+  eqHold?: number | null;
   resultVisible: boolean;
 }
 
@@ -976,7 +978,9 @@ export class GameRuntime {
       const sizes = (from: number) => (from === 0 ? [3, 1, 1] : from === 3 ? [1, 1] : from === 4 ? [1] : []);
       const STEP = FAST ? 5 : 2200; // entre deux rues
       const SUSPENSE = FAST ? 5 : 2800; // river face cachée
-      const AFTER_RIVER = FAST ? 5 : 2400; // le temps de voir la river avant le résultat
+      const AFTER_RIVER = FAST ? 5 : 3800; // le temps de voir la river (et les % finaux) avant le résultat
+      const RIVER_REVEAL = FAST ? 0 : 2300; // durée du dévoilement lent de la river à l'écran
+      const CARD_REVEAL = FAST ? 0 : 750; // retournement d'une carte (flop / turn)
       const BETWEEN_BOARDS = FAST ? 5 : 2200; // pause avant le second board
       type Step = { run: 1 | 2; size: number; river: boolean };
       const plan: Step[] = [];
@@ -996,6 +1000,18 @@ export class GameRuntime {
       };
       let k = 0;
       const reveal = (st: Step) => {
+        // Les % de l'étape précédente restent affichés tant que la carte se retourne :
+        // pas de « 100 % » avant d'avoir vu la river.
+        const holdKey = this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard;
+        const lag = st.river ? RIVER_REVEAL : CARD_REVEAL;
+        if (lag > 0) {
+          this.staging.eqHold = holdKey;
+          setTimeout(() => {
+            if (this.disposed || this.staging.eqHold !== holdKey) return;
+            this.staging.eqHold = null;
+            this.changed();
+          }, lag);
+        }
         if (st.run === 1) {
           announce(1, this.staging.visibleBoard, st.size);
           this.staging.visibleBoard += st.size;
@@ -1474,7 +1490,7 @@ export class GameRuntime {
       tournament,
       spectators: this.spectatorCount,
       equity: h?.finished && !resultVisible
-        ? (this.equityByBoard.get(this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard) ?? null)
+        ? (this.equityByBoard.get(this.staging.eqHold ?? (this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard)) ?? null)
         : this.runoutVote ? (this.runoutEquity() ?? null) : null,
       bombPot: !!h?.bombPot && !h.finished,
       bombBB: h?.bombPot && !h.finished ? (this.currentBombBB ?? Math.round(h.bombPot / h.bigBlind)) : null,
