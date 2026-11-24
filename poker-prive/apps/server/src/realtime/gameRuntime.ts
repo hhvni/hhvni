@@ -130,7 +130,8 @@ export class GameRuntime {
     this.status = init.status;
     if (init.snapshot) {
       this.table = PokerTable.restore(init.snapshot.table);
-      for (const m of init.snapshot.meta) this.meta.set(m.userId, { ...m, connected: false, disconnectedAt: Date.now() });
+      // Après un redémarrage, les humains doivent se reconnecter ; les robots, pilotés par le serveur, restent connectés
+      for (const m of init.snapshot.meta) this.meta.set(m.userId, { ...m, connected: !!m.bot, disconnectedAt: m.bot ? null : Date.now() });
       this.tournament = init.snapshot.tournament;
       this.actionSeq = init.snapshot.actionSeq;
       this.registered = init.snapshot.registered ?? [];
@@ -815,7 +816,7 @@ export class GameRuntime {
           this.table.addChips(m.userId, m.pendingReload);
           m.pendingReload = 0;
         }
-        const longGone = !m.connected && m.disconnectedAt && Date.now() - m.disconnectedAt > 10 * 60_000;
+        const longGone = !m.bot && !m.connected && m.disconnectedAt && Date.now() - m.disconnectedAt > 10 * 60_000;
         if (m.leaveAfterHand || m.kicked || longGone) void this.removeCashPlayer(m.userId);
         else if (this.table.seats[seat]!.stack === 0 && m.bot) {
           if (this.reloadAmountFor(m.userId) > 0) void this.botReload(m.userId);
