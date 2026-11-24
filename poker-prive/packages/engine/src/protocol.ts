@@ -38,6 +38,10 @@ export interface GameConfig {
   addonAllowed: boolean;
   addonStack: number;
   uiLevel: UiLevel;
+  /** Straddle autorisé (cash game). */
+  allowStraddle?: boolean;
+  /** « Run it twice » autorisé lors des tapis (cash game). */
+  runItTwice?: boolean;
 }
 
 export interface PublicSeat {
@@ -61,6 +65,8 @@ export interface PublicSeat {
   isBigBlind: boolean;
   pendingRebuy: boolean;
   isBot: boolean;
+  /** A posé un straddle sur cette main. */
+  isStraddle: boolean;
   /** Attend la grosse blinde avant d'être servi (cash game). */
   waitingBB: boolean;
 }
@@ -76,7 +82,9 @@ export interface TurnInfo {
 
 export interface HandResultView {
   handNumber: number;
-  pots: { amount: number; winners: string[]; description: string | null }[];
+  pots: { amount: number; winners: string[]; description: string | null; run?: 1 | 2 }[];
+  /** Descriptions des mains sur le second board (run it twice). */
+  shown2?: { userId: string; description: string }[];
   shown: { userId: string; cards: Card[]; description: string; best: Card[] }[];
   /** Joueurs ayant jeté leur main au showdown (cartes non montrées). */
   mucked: string[];
@@ -107,6 +115,10 @@ export interface GameView {
   config: GameConfig;
   seats: (PublicSeat | null)[];
   board: Card[];
+  /** Second board (run it twice), sinon null. */
+  board2: Card[] | null;
+  /** Vote « jouer le tapis deux fois » en cours. */
+  runout: { deadline: number; votes: { userId: string; vote: boolean | null }[] } | null;
   pots: { amount: number; eligible: string[] }[];
   totalPot: number;
   handNumber: number;
@@ -134,6 +146,11 @@ export interface GameView {
     postNowRequested: boolean;
     /** Peut montrer ses cartes après le coup. */
     canShow: boolean;
+    /** Peut voter pour jouer le tapis deux fois (null = pas concerné). */
+    runoutVote: boolean | null | undefined;
+    canVoteRunout: boolean;
+    /** Straddle automatique activé. */
+    straddleOn: boolean;
   };
   tournament: TournamentView | null;
   spectators: number;

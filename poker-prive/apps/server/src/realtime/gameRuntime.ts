@@ -9,7 +9,7 @@
 import { randomInt } from 'node:crypto';
 import {
   allInEquity, computeHandStats, evaluateBest, PokerError, PokerTable, prizePool, totalPot,
-  type ActionType, type GameConfig, type GameStatus, type GameView, type HandEvent,
+  type ActionType, type Card, type GameConfig, type GameStatus, type GameView, type HandEvent,
   type HandResultView, type LogLine, type PublicSeat, type TableSnapshot, type TournamentView, type TurnInfo,
 } from '@poker/engine';
 import { Prisma } from '@prisma/client';
@@ -71,6 +71,8 @@ interface TournamentState {
 
 interface Staging {
   visibleBoard: number;
+  /** Cartes visibles du second board (null tant qu'il n'est pas commencé). */
+  visible2?: number | null;
   resultVisible: boolean;
 }
 
@@ -111,6 +113,8 @@ export class GameRuntime {
   private staging: Staging = { visibleBoard: 0, resultVisible: true };
   /** Probabilités de gain par longueur de board pendant un tapis. */
   private equityByBoard = new Map<number, { userId: string; win: number; tie: number }[]>();
+  /** Vote « run it twice » en cours. */
+  private runoutVote: { deadline: number; votes: Map<string, boolean | null>; timer: NodeJS.Timeout; boardBefore: number } | null = null;
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
   private stagingTimer: NodeJS.Timeout | null = null;
@@ -133,6 +137,8 @@ export class GameRuntime {
     if (init.snapshot) {
       this.table = PokerTable.restore(init.snapshot.table);
       this.table.config.enforceBlindRules = init.config.mode === 'CASH';
+      this.table.config.straddle = init.config.mode === 'CASH' && init.config.allowStraddle !== false;
+      this.table.config.runItTwice = init.config.mode === 'CASH' && init.config.runItTwice !== false;
       // Après un redémarrage, les humains doivent se reconnecter ; les robots, pilotés par le serveur, restent connectés
       for (const m of init.snapshot.meta) this.meta.set(m.userId, { ...m, connected: !!m.bot, disconnectedAt: m.bot ? null : Date.now() });
       this.tournament = init.snapshot.tournament;
@@ -142,6 +148,8 @@ export class GameRuntime {
       this.table = new PokerTable({
         smallBlind: init.config.smallBlind, bigBlind: init.config.bigBlind, ante: init.config.ante, maxSeats: init.config.maxSeats,
         enforceBlindRules: init.config.mode === 'CASH',
+        straddle: init.config.mode === 'CASH' && init.config.allowStraddle !== false,
+        runItTwice: init.config.mode === 'CASH' && init.config.runItTwice !== false,
       });
     }
   }
@@ -169,6 +177,7 @@ export class GameRuntime {
     this.disposed = true;
     for (const t of [this.turnTimer, this.nextHandTimer, this.stagingTimer, this.levelTimer, this.breakTimer, this.snapshotTimer]) if (t) clearTimeout(t);
     for (const t of this.rebuyTimers.values()) clearTimeout(t);
+    if (this.runoutVote) clearTimeout(this.runoutVote.timer);
   }
 
   /** Attend la fin des écritures en base (tests, arrêt propre). */
@@ -345,6 +354,79 @@ export class GameRuntime {
     } catch {
       await this.removeCashPlayer(userId);
     }
+  }
+
+  // ─── Run it twice ───
+
+  private startRunoutVote(boardBefore: number): void {
+    const h = this.table.hand!;
+    this.turn = null;
+    if (this.turnTimer) clearTimeout(this.turnTimer);
+    const votes = new Map<string, boolean | null>();
+    for (const p of h.players.filter((x) => !x.folded)) {
+      const m = this.meta.get(p.playerId);
+      // Robots : acceptent toujours. Absents / déconnectés : refusent.
+      votes.set(p.playerId, m?.bot ? true : !m || m.away || !m.connected ? false : null);
+    }
+    const ms = FAST ? 30 : 10_000;
+    this.runoutVote = { deadline: Date.now() + ms, votes, boardBefore, timer: setTimeout(() => this.finishRunoutVote(), ms) };
+    this.log('Tapis ! Jouer le board deux fois ? (tous les joueurs doivent accepter)', 'system');
+    this.checkRunoutVote();
+  }
+
+  voteRunout(userId: string, accept: boolean): void {
+    const v = this.runoutVote;
+    if (!v || !v.votes.has(userId)) throw new GameError('NO_VOTE', 'Aucun vote en cours pour vous');
+    if (v.votes.get(userId) !== null) throw new GameError('ALREADY', 'Vous avez déjà répondu');
+    v.votes.set(userId, accept);
+    this.log(`${this.meta.get(userId)?.username ?? '?'} ${accept ? 'accepte' : 'refuse'} de jouer deux fois`, 'system');
+    this.checkRunoutVote();
+    this.changed();
+  }
+
+  private checkRunoutVote(): void {
+    const v = this.runoutVote;
+    if (!v) return;
+    const values = [...v.votes.values()];
+    if (values.includes(false) || values.every((x) => x === true)) this.finishRunoutVote();
+  }
+
+  private finishRunoutVote(): void {
+    const v = this.runoutVote;
+    if (!v || this.disposed) return;
+    clearTimeout(v.timer);
+    this.runoutVote = null;
+    const twice = [...v.votes.values()].every((x) => x === true);
+    const events = this.table.resolveRunout(twice ? 2 : 1);
+    this.log(twice ? 'Le board sera joué deux fois' : 'Le board sera joué une fois', 'system');
+    this.handleEvents(events);
+    const streets = this.table.hand!.events.filter((e) => e.type === 'street').length - (v.boardBefore === 0 ? 0 : v.boardBefore === 3 ? 1 : v.boardBefore === 4 ? 2 : 3);
+    this.onHandFinished(v.boardBefore, Math.max(1, streets));
+    this.changed();
+  }
+
+  private runoutEquity(): { userId: string; win: number; tie: number }[] | null {
+    const h = this.table.hand;
+    if (!h) return null;
+    const live = h.players.filter((p) => !p.folded && p.shown);
+    if (live.length < 2) return null;
+    const key = 1000 + h.board.length;
+    if (!this.equityByBoard.has(key)) {
+      const eq = allInEquity(live.map((p) => p.hole), h.board);
+      this.equityByBoard.set(key, live.map((p, i) => ({ userId: p.playerId, win: eq[i]!.win, tie: eq[i]!.tie })));
+    }
+    return this.equityByBoard.get(key)!;
+  }
+
+  setStraddle(userId: string, on: boolean): void {
+    try {
+      this.table.setStraddle(userId, on);
+    } catch (e) {
+      if (e instanceof PokerError) throw new GameError(e.code, e.message);
+      throw e;
+    }
+    this.log(`${this.meta.get(userId)?.username ?? '?'} ${on ? 'active' : 'désactive'} le straddle`, 'system');
+    this.changed();
   }
 
   /** Payer la grosse blinde (et la petite manquée) pour jouer dès la prochaine main. */
@@ -740,6 +822,8 @@ export class GameRuntime {
     const streets = events.filter((e) => e.type === 'street').length;
     if (h.finished) {
       this.onHandFinished(boardBefore, streets);
+    } else if (h.pendingRunout) {
+      this.startRunoutVote(boardBefore);
     } else {
       this.scheduleTurn();
     }
@@ -776,47 +860,61 @@ export class GameRuntime {
     this.turn = null;
     if (this.turnTimer) clearTimeout(this.turnTimer);
 
-    const showdown = h.events.find((e) => e.type === 'showdown');
+    const showdowns = h.events.filter((e) => e.type === 'showdown');
+    const showdown = showdowns[0];
+    const showdown2 = showdowns.find((e) => e.type === 'showdown' && e.run === 2);
     this.result = {
       handNumber: h.handNumber,
-      pots: h.awards.map((a) => {
-        const ev = h.events.find((e) => e.type === 'potAwarded' && e.potIndex === a.potIndex);
-        return { amount: a.amount, winners: a.winners, description: ev && ev.type === 'potAwarded' ? ev.description : null };
-      }),
+      pots: h.events.flatMap((e) => (e.type === 'potAwarded' ? [{ amount: e.amount, winners: e.winners, description: e.description, run: e.run }] : [])),
       shown: showdown && showdown.type === 'showdown'
-        ? showdown.hands.map((s) => ({ userId: s.playerId, cards: s.hole, description: s.description, best: s.best }))
+        ? showdown.hands.map((x) => ({ userId: x.playerId, cards: x.hole, description: x.description, best: x.best }))
         : [],
+      shown2: showdown2 && showdown2.type === 'showdown' ? showdown2.hands.map((x) => ({ userId: x.playerId, description: x.description })) : undefined,
       mucked: showdown && showdown.type === 'showdown' ? (showdown.mucked ?? []) : [],
     };
     for (const id of this.result.mucked) this.log(`${this.meta.get(id)?.username ?? '?'} jette sa main`, 'action');
 
     // Déroulé progressif du board en cas d'all-in (affichage contrôlé par le serveur)
-    const stageCount = streetsDealt > 1 || (streetsDealt === 1 && !!showdown && boardBefore < 5) ? streetsDealt : 0;
+    const twice = !!h.board2;
+    const stageCount = streetsDealt > 1 || twice || (streetsDealt === 1 && !!showdown && boardBefore < 5) ? streetsDealt : 0;
     const resultDelay = () => {
       this.staging.resultVisible = true;
       this.announceWinners();
       this.changed();
-      this.scheduleNextHand(showdown ? 5000 : 3000);
+      this.scheduleNextHand(showdown ? (twice ? 7000 : 5000) : 3000);
     };
     this.equityByBoard.clear();
     if (stageCount > 0) {
-      this.staging = { visibleBoard: boardBefore, resultVisible: false };
+      this.staging = { visibleBoard: boardBefore, visible2: null, resultVisible: false };
       // Probabilités de gain à chaque étape du déroulé (mains dévoilées uniquement)
       const live = h.players.filter((p) => !p.folded && p.shown);
       if (live.length >= 2) {
-        for (let len = boardBefore; len <= 5; len++) {
-          if (len !== boardBefore && len !== 3 && len !== 4 && len !== 5) continue;
-          const eq = allInEquity(live.map((p) => p.hole), h.board.slice(0, len));
-          this.equityByBoard.set(len, live.map((p, i) => ({ userId: p.playerId, win: eq[i]!.win, tie: eq[i]!.tie })));
+        const boards: [number, Card[]][] = [[0, h.board]];
+        if (h.board2) boards.push([100, h.board2]);
+        for (const [offset, board] of boards) {
+          for (const len of [boardBefore, 3, 4, 5]) {
+            if (len < boardBefore || this.equityByBoard.has(offset + len)) continue;
+            const eq = allInEquity(live.map((p) => p.hole), board.slice(0, len));
+            this.equityByBoard.set(offset + len, live.map((p, i) => ({ userId: p.playerId, win: eq[i]!.win, tie: eq[i]!.tie })));
+          }
         }
       }
-      const streetSizes = h.events.filter((e) => e.type === 'street').slice(-stageCount).map((e) => (e.type === 'street' ? e.cards.length : 0));
-      let i = 0;
+      // Étapes : rues du premier board, puis celles du second
+      const sizes = (from: number) => (from === 0 ? [3, 1, 1] : from === 3 ? [1, 1] : from === 4 ? [1] : []);
+      const steps: (1 | 2)[] = [...sizes(boardBefore).map(() => 1 as const), ...(twice ? sizes(boardBefore).map(() => 2 as const) : [])];
+      const s1 = sizes(boardBefore);
+      let i1 = 0;
+      let i2 = 0;
+      let k = 0;
       const tick = () => {
         if (this.disposed) return;
-        if (i < streetSizes.length) {
-          this.staging.visibleBoard += streetSizes[i]!;
-          i++;
+        if (k < steps.length) {
+          if (steps[k] === 1) this.staging.visibleBoard += s1[i1++]!;
+          else {
+            if (this.staging.visible2 === null || this.staging.visible2 === undefined) this.staging.visible2 = boardBefore;
+            this.staging.visible2 += s1[i2++]!;
+          }
+          k++;
           this.changed();
           this.stagingTimer = setTimeout(tick, FAST ? 5 : 1400);
         } else {
@@ -825,7 +923,7 @@ export class GameRuntime {
       };
       this.stagingTimer = setTimeout(tick, FAST ? 5 : 900);
     } else {
-      this.staging = { visibleBoard: h.board.length, resultVisible: true };
+      this.staging = { visibleBoard: h.board.length, visible2: h.board2 ? 5 : null, resultVisible: true };
       this.announceWinners();
       this.scheduleNextHand(showdown ? 5000 : 2500);
     }
@@ -837,7 +935,9 @@ export class GameRuntime {
     for (const e of h.events) {
       if (e.type !== 'potAwarded') continue;
       const names = e.winners.map((id) => this.meta.get(id)?.username ?? '?');
-      const label = h.awards.length > 1 ? (e.potIndex === 0 ? 'le pot principal' : `le pot secondaire ${e.potIndex}`) : 'le pot';
+      const multi = h.events.filter((x) => x.type === 'potAwarded' && x.run === e.run).length > 1;
+      const base = multi ? (e.potIndex === 0 ? 'le pot principal' : `le pot secondaire ${e.potIndex}`) : 'le pot';
+      const label = e.run ? `${base} (${e.run === 1 ? 'premier' : 'second'} board)` : base;
       if (names.length > 1) {
         this.log(`${names.join(' et ')} se partagent ${label} de ${fmt(e.amount)} jetons${e.description ? ` (${e.description})` : ''}`, 'win');
       } else {
@@ -858,7 +958,7 @@ export class GameRuntime {
     if (this.stagingTimer && !this.staging.resultVisible) return; // attendre la fin du déroulé
     this.result = null;
     this.equityByBoard.clear();
-    this.staging = { visibleBoard: 5, resultVisible: true };
+    this.staging = { visibleBoard: 5, visible2: null, resultVisible: true };
     for (const m of this.meta.values()) m.lastAction = null;
 
     // Cash : départs, recharges différées, absents prolongés
@@ -938,6 +1038,8 @@ export class GameRuntime {
       // Tous à tapis dès les blinds : déroulé immédiat
       const streets = h.events.filter((e) => e.type === 'street').length;
       this.onHandFinished(0, streets);
+    } else if (h.pendingRunout) {
+      this.startRunoutVote(0);
     } else {
       this.scheduleTurn();
     }
@@ -1165,6 +1267,7 @@ export class GameRuntime {
         isSmallBlind: !!h && h.sbSeat === i && !h.finished, isBigBlind: !!h && h.bbSeat === i && !h.finished,
         pendingRebuy: !!m?.pendingRebuyUntil,
         isBot: !!m?.bot,
+        isStraddle: !!h && !h.finished && h.straddleSeat === i,
         waitingBB: !!s.waitBB && !s.postNow && !hp,
       };
     });
@@ -1213,10 +1316,17 @@ export class GameRuntime {
         postNowAmount: mySeat >= 0 && !this.table.seats[mySeat]!.postNow ? this.table.postNowAmount(userId) : 0,
         postNowRequested: mySeat >= 0 && !!this.table.seats[mySeat]!.postNow,
         canShow: !!h?.finished && resultVisible && !!this.result && !!myHp && !myHp.shown,
+        runoutVote: this.runoutVote?.votes.get(userId),
+        canVoteRunout: !!this.runoutVote && this.runoutVote.votes.get(userId) === null,
+        straddleOn: mySeat >= 0 && !!this.table.seats[mySeat]!.straddle,
       },
       tournament,
       spectators: this.spectatorCount,
-      equity: h?.finished && !resultVisible ? (this.equityByBoard.get(this.staging.visibleBoard) ?? null) : null,
+      equity: h?.finished && !resultVisible
+        ? (this.equityByBoard.get(this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard) ?? null)
+        : this.runoutVote ? (this.runoutEquity() ?? null) : null,
+      board2: h?.board2 ? (h.finished && !resultVisible ? (this.staging.visible2 != null ? h.board2.slice(0, this.staging.visible2) : null) : h.board2) : null,
+      runout: this.runoutVote ? { deadline: this.runoutVote.deadline, votes: [...this.runoutVote.votes].map(([id, vote]) => ({ userId: id, vote })) } : null,
     };
   }
 

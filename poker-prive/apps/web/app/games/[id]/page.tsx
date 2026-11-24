@@ -254,6 +254,7 @@ function Game({ gameId }: { gameId: string }) {
       <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} gameId={gameId} />
       <SeatMenu seat={menuSeat} state={state} onClose={() => setMenuSeat(null)} run={run} />
       <RebuyPrompt state={state} run={run} now={now} />
+      <RunoutPrompt state={state} run={run} now={now} />
       {video.error && <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-danger/90 px-4 py-2 text-sm text-white">{video.error}</div>}
     </div>
   );
@@ -301,6 +302,14 @@ function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run:
   if (state.me.canReload) items.push(<Button key="reload" size="sm" variant="gold" onClick={() => run('game:reload', {}, 'Jetons rechargés')}>Recharger {fmt(state.me.reloadAmount)}</Button>);
   if (state.me.canAddon) items.push(<Button key="addon" size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>);
   if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
+  if (mySeat && state.mode === 'CASH' && state.config.allowStraddle !== false && state.status !== 'FINISHED') {
+    items.push(
+      <button key="straddle" onClick={() => run('game:straddle', { on: !state.me.straddleOn })} title="Mise automatique de 2 BB à l'aveugle quand vous êtes juste après la grosse blinde" className={cx('flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold ring-1 backdrop-blur transition', state.me.straddleOn ? 'bg-danger/20 text-[#ffb3ba] ring-danger/60' : 'bg-night-900/80 text-muted ring-white/10 hover:text-ink')}>
+        <span className={cx('relative h-4 w-7 rounded-full transition', state.me.straddleOn ? 'bg-danger' : 'bg-white/15')}><span className={cx('absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all', state.me.straddleOn ? 'left-3.5' : 'left-0.5')} /></span>
+        Straddle 2 BB
+      </button>,
+    );
+  }
   if (state.me.canShow) items.push(<Button key="show" size="sm" variant="ghost" onClick={() => run('game:showCards', {})}>Montrer mes cartes</Button>);
   if (state.me.postNowAmount > 0) {
     items.push(<span key="wbb" className="rounded-lg bg-night-900/85 px-2 py-1 text-xs text-muted">Vous attendez la grosse blinde pour être servi</span>);
@@ -643,5 +652,42 @@ function DisplayToggles() {
       <Toggle label="Raccourcis clavier" hint="F se coucher · C parole/suivre · R miser · 1–8 tailles · ↑↓ ajuster" checked={d.keyboard} onChange={(v) => setDisplayPrefs({ keyboard: v })} />
       <Toggle label="Jeu 4 couleurs" hint="Carreaux bleus et trèfles verts, plus lisible ; sinon jeu classique rouge et noir" checked={d.fourColor} onChange={(v) => setDisplayPrefs({ fourColor: v })} />
     </>
+  );
+}
+
+/** Vote « jouer le tapis deux fois ». */
+function RunoutPrompt({ state, run, now }: { state: GameView; run: Run; now: () => number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!state.runout) return;
+    const id = setInterval(() => setTick((x) => x + 1), 200);
+    return () => clearInterval(id);
+  }, [state.runout]);
+  const r = state.runout;
+  return (
+    <AnimatePresence>
+      {r && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="fixed left-1/2 top-16 z-50 w-[min(92vw,380px)] -translate-x-1/2 rounded-2xl bg-night-850/95 p-4 shadow-2xl ring-1 ring-gold-400/40 backdrop-blur">
+          <p className="text-center text-sm font-semibold">Tapis ! Jouer le board <span className="text-gold-300">deux fois</span> ?</p>
+          <p className="mt-0.5 text-center text-[11px] text-muted">Chaque moitié du pot va au gagnant de son board. Tous les joueurs doivent accepter.</p>
+          <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full bg-gold-400 transition-[width] duration-200" style={{ width: `${Math.max(0, Math.min(100, ((r.deadline - now()) / 10_000) * 100))}%` }} />
+          </div>
+          <ul className="mt-3 flex flex-wrap justify-center gap-2 text-xs">
+            {r.votes.map((v) => (
+              <li key={v.userId} className={cx('rounded-full px-2 py-0.5 ring-1', v.vote === true ? 'bg-success/15 text-success ring-success/40' : v.vote === false ? 'bg-danger/15 text-danger ring-danger/40' : 'bg-white/5 text-muted ring-white/10')}>
+                {state.seats.find((s) => s?.userId === v.userId)?.username ?? '?'} {v.vote === true ? '✓' : v.vote === false ? '✗' : '…'}
+              </li>
+            ))}
+          </ul>
+          {state.me.canVoteRunout && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant="ghost" onClick={() => run('game:runout', { accept: false })}>Une fois</Button>
+              <Button variant="gold" onClick={() => run('game:runout', { accept: true })}>Deux fois</Button>
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

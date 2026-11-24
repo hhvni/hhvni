@@ -85,7 +85,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.seats, state.handNumber]);
   const bestCards = useMemo(() => {
-    if (!state.result) return new Set<string>();
+    if (!state.result || state.board2) return new Set<string>();
     const ids = new Set(state.result.pots.flatMap((p) => p.winners));
     return new Set(state.result.shown.filter((s) => ids.has(s.userId)).flatMap((s) => s.best));
   }, [state.result]);
@@ -148,11 +148,36 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
             );
           })}
         </div>
+        {/* Second board (run it twice) */}
+        {state.board2 && (
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <span className="mr-1 rounded bg-gold-400/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-300">2ᵉ board</span>
+            {Array.from({ length: 5 }, (_, i) => {
+              const c = state.board2![i];
+              return (
+                <div key={i} className="rounded-[6px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 30 : 40, height: narrow ? 42 : 56 }}>
+                  <AnimatePresence>
+                    {c && (
+                      <motion.div key={`b2-${state.handNumber}-${c}`} initial={{ y: -20, opacity: 0, rotateY: 180 }} animate={{ y: 0, opacity: 1, rotateY: 0 }} transition={{ type: 'spring', damping: 18, stiffness: 200, delay: i < 3 ? i * 0.08 : 0 }}>
+                        <PlayingCard card={c} size={narrow ? 'xs' : 'sm'} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <AnimatePresence>
           {state.result && state.result.pots[0] && (
-            <motion.div initial={{ opacity: 0, y: 8, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }} className="rounded-full bg-black/55 px-4 py-1.5 text-center text-xs font-semibold text-gold-300 ring-1 ring-gold-400/40 backdrop-blur sm:text-sm">
-              {state.result.pots[0].winners.map((id) => state.seats.find((s) => s?.userId === id)?.username ?? '?').join(' & ')}
-              {state.result.pots[0].description ? ` · ${state.result.pots[0].description}` : ' remporte le pot'}
+            <motion.div initial={{ opacity: 0, y: 8, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }} className="rounded-2xl bg-black/55 px-4 py-1.5 text-center text-xs font-semibold text-gold-300 ring-1 ring-gold-400/40 backdrop-blur sm:text-sm">
+              {(state.result.pots.some((p) => p.run) ? state.result.pots.filter((p, i, a) => a.findIndex((x) => x.run === p.run) === i) : [state.result.pots[0]]).map((pot, i) => (
+                <div key={i}>
+                  {pot.run && <span className="mr-1 text-[10px] uppercase text-white/60">{pot.run === 1 ? '1ᵉʳ board' : '2ᵉ board'}</span>}
+                  {pot.winners.map((id) => state.seats.find((s) => s?.userId === id)?.username ?? '?').join(' & ')}
+                  {pot.description ? ` · ${pot.description}` : ' remporte le pot'}
+                </div>
+              ))}
             </motion.div>
           )}
         </AnimatePresence>
@@ -385,6 +410,7 @@ function Seat({
         <div className="absolute -right-2 -top-2 flex gap-0.5">
           {seat.isSmallBlind && <span className="rounded bg-info/90 px-1 text-[9px] font-bold text-white">SB</span>}
           {seat.isBigBlind && <span className="rounded bg-gold-500 px-1 text-[9px] font-bold text-night-950">BB</span>}
+          {seat.isStraddle && <span className="rounded bg-danger px-1 text-[9px] font-bold text-white" title="Straddle (2 BB)">STR</span>}
         </div>
       </div>
 
@@ -403,7 +429,14 @@ function Seat({
               {eq.tie >= 0.005 && <span className="text-[9px] font-semibold opacity-80">+{pctLabel(eq.tie)} égalité</span>}
             </motion.span>
           ) : result ? (
-            <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-gold-300">{result.description}</motion.span>
+            <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center rounded-xl bg-black/70 px-2 py-0.5 text-center text-[10px] font-semibold leading-tight text-gold-300">
+              {state.result?.shown2 ? (
+                <>
+                  <span><span className="text-white/50">1 : </span>{result.description}</span>
+                  <span><span className="text-white/50">2 : </span>{state.result.shown2.find((x) => x.userId === seat.userId)?.description}</span>
+                </>
+              ) : result.description}
+            </motion.span>
           ) : state.result?.mucked.includes(seat.userId) ? (
             <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-muted">Main jetée</span>
           ) : seat.waitingBB && !seat.sittingOut ? (

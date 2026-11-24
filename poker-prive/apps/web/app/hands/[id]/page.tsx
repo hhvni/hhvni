@@ -24,6 +24,7 @@ interface HandResp {
 interface Frame {
   text: string;
   board: string[];
+  board2?: string[];
   pot: number;
   players: Record<string, { stack: number; bet: number; folded: boolean; action: string | null; shown: string[] | null; won: number }>;
 }
@@ -52,13 +53,14 @@ function buildFrames(h: HandResp['hand']): Frame[] {
         const p = cur.players[e.playerId]!;
         p.stack -= e.amount;
         p.bet += e.amount;
-        p.action = e.kind === 'sb' ? 'SB' : e.kind === 'dead' ? 'Blinde morte' : 'BB';
+        p.action = e.kind === 'sb' ? 'SB' : e.kind === 'dead' ? 'Blinde morte' : e.kind === 'straddle' ? 'Straddle' : 'BB';
         if (e.kind === 'dead') {
           p.bet -= e.amount;
           cur.pot += e.amount;
         }
         push(e.kind === 'post' ? `${name(e.playerId)} paie la grosse blinde pour entrer (${fmt(e.amount)})`
           : e.kind === 'dead' ? `${name(e.playerId)} paie la petite blinde manquée (${fmt(e.amount)}, argent mort)`
+          : e.kind === 'straddle' ? `${name(e.playerId)} straddle à ${fmt(e.amount)}`
           : `${name(e.playerId)} paie la ${e.kind === 'sb' ? 'petite' : 'grosse'} blind (${fmt(e.amount)})`);
         break;
       }
@@ -84,6 +86,13 @@ function buildFrames(h: HandResp['hand']): Frame[] {
         }
         cur.board = e.board;
         push(`${e.street === 'flop' ? 'Flop' : e.street === 'turn' ? 'Turn' : 'River'}`);
+        break;
+      case 'runItTwice':
+        push(e.accepted ? 'Les joueurs acceptent de jouer le board deux fois' : 'Le board est joué une fois');
+        break;
+      case 'secondBoard':
+        cur.board2 = e.board;
+        push(`Second board : ${e.cards.join(' ')}`);
         break;
       case 'reveal':
         for (const x of e.hands) cur.players[x.playerId]!.shown = x.hole;
@@ -111,7 +120,7 @@ function buildFrames(h: HandResp['hand']): Frame[] {
           cur.players[id]!.won += amt;
         }
         cur.pot -= e.amount;
-        push(`${e.winners.map(name).join(' et ')} ${e.winners.length > 1 ? 'se partagent' : 'remporte'} ${fmt(e.amount)}${e.description ? ` (${e.description})` : ''}`);
+        push(`${e.run ? (e.run === 1 ? '1er board : ' : '2e board : ') : ''}${e.winners.map(name).join(' et ')} ${e.winners.length > 1 ? 'se partagent' : 'remporte'} ${fmt(e.amount)}${e.description ? ` (${e.description})` : ''}`);
         break;
       default:
         break;
@@ -171,6 +180,12 @@ function Replay() {
               </div>
             ))}
           </div>
+          {f.board2 && (
+            <div className="relative flex items-center gap-1">
+              <span className="mr-1 text-[10px] font-bold uppercase text-gold-300">2ᵉ board</span>
+              {f.board2.map((c) => <PlayingCard key={c} card={c} size="sm" />)}
+            </div>
+          )}
           <motion.p key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative text-center text-sm font-semibold text-white">{f.text}</motion.p>
         </div>
         <div className="flex items-center justify-center gap-2 border-t border-white/5 p-3">

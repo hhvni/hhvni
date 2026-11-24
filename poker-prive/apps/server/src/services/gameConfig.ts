@@ -31,6 +31,8 @@ export const GameConfigInput = z
     addonAllowed: z.boolean().default(false),
     addonStack: int(0, 10_000_000).optional(),
     uiLevel: z.enum(['simple', 'standard', 'expert']).default('standard'),
+    allowStraddle: z.boolean().default(true),
+    runItTwice: z.boolean().default(true),
   })
   .refine((c) => c.smallBlind <= c.bigBlind, { message: 'La petite blind doit être ≤ à la grosse blind', path: ['smallBlind'] })
   .refine((c) => c.bigBlind * 10 <= c.startingStack, { message: 'Le tapis de départ doit valoir au moins 10 grosses blinds', path: ['startingStack'] })
@@ -75,6 +77,8 @@ export function buildGameConfig(input: GameConfigInputT): GameConfig {
     addonAllowed: input.mode === 'TOURNAMENT' && input.addonAllowed,
     addonStack: input.addonStack ?? input.startingStack,
     uiLevel: input.uiLevel,
+    allowStraddle: input.mode === 'CASH' && input.allowStraddle,
+    runItTwice: input.mode === 'CASH' && input.runItTwice,
   };
 }
 

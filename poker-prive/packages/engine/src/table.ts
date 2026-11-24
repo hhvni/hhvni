@@ -34,6 +34,10 @@ export interface TableConfig {
    * manqué sa grosse blinde, attend la grosse blinde ou paie pour jouer tout de suite.
    */
   enforceBlindRules?: boolean;
+  /** Straddle autorisé (2 BB à l'aveugle par le joueur après la grosse blinde). */
+  straddle?: boolean;
+  /** « Run it twice » autorisé lors des tapis (si tous les joueurs acceptent). */
+  runItTwice?: boolean;
 }
 
 export interface PlayerAction {
@@ -54,6 +58,8 @@ export interface SeatInfo {
   postNow?: boolean;
   missedBB?: boolean;
   missedSB?: boolean;
+  /** Straddle automatique quand le joueur est juste après la grosse blinde. */
+  straddle?: boolean;
 }
 
 export interface HandPlayer {
@@ -77,14 +83,16 @@ export interface HandPlayer {
 export type HandEvent =
   | { type: 'handStart'; handNumber: number; buttonSeat: number; sbSeat: number; bbSeat: number; smallBlind: number; bigBlind: number; ante: number; players: { playerId: string; name: string; seat: number; stack: number }[] }
   | { type: 'ante'; playerId: string; amount: number; allIn: boolean }
-  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb' | 'post' | 'dead'; amount: number; allIn: boolean }
+  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb' | 'post' | 'dead' | 'straddle'; amount: number; allIn: boolean }
   | { type: 'holeCards'; count: number }
   | { type: 'action'; street: Street; playerId: string; action: ActionType; amount: number; to: number; allIn: boolean }
   | { type: 'street'; street: Street; cards: Card[]; board: Card[] }
   | { type: 'uncalled'; playerId: string; amount: number }
   | { type: 'reveal'; hands: { playerId: string; hole: Card[] }[] }
-  | { type: 'showdown'; hands: { playerId: string; hole: Card[]; description: string; category: number; best: Card[] }[]; mucked?: string[] }
-  | { type: 'potAwarded'; potIndex: number; amount: number; winners: string[]; shares: Record<string, number>; description: string | null; showdown: boolean }
+  | { type: 'showdown'; hands: { playerId: string; hole: Card[]; description: string; category: number; best: Card[] }[]; mucked?: string[]; run?: 1 | 2 }
+  | { type: 'runItTwice'; accepted: boolean }
+  | { type: 'secondBoard'; cards: Card[]; board: Card[] }
+  | { type: 'potAwarded'; potIndex: number; amount: number; winners: string[]; shares: Record<string, number>; description: string | null; showdown: boolean; run?: 1 | 2 }
   | { type: 'handEnd'; stacks: Record<string, number> };
 
 export interface HandState {
@@ -106,6 +114,16 @@ export interface HandState {
   events: HandEvent[];
   awards: PotAward[];
   startedAt: number;
+  /** Siège du straddle (null si aucun). */
+  straddleSeat?: number | null;
+  /** Tapis : en attente de la décision « jouer une ou deux fois ». */
+  pendingRunout?: boolean;
+  /** Nombre de déroulés choisi (1 ou 2). */
+  runTimes?: 1 | 2;
+  /** Nombre de cartes du board commun aux deux déroulés. */
+  runFrom?: number;
+  /** Second board (run it twice). */
+  board2?: Card[];
 }
 
 export interface LegalActions {
@@ -342,6 +360,21 @@ export class PokerTable {
     }
     hand.currentBet = bigBlind;
     hand.lastFullRaise = bigBlind;
+    hand.straddleSeat = null;
+
+    // Straddle : le joueur juste après la grosse blinde mise 2 BB à l'aveugle
+    if (this.config.straddle && eligible.length >= 3) {
+      const utg = this.orderFrom(bbSeat).find((p) => p.seat !== sbSeat && p.seat !== bbSeat);
+      const info = utg ? this.seats[utg.seat] : null;
+      if (utg && info?.straddle && !plan.posters.includes(utg.seat) && utg.stack > 0 && !utg.allIn) {
+        this.postBlind(utg, bigBlind * 2, 'straddle');
+        if (utg.streetBet > bigBlind) {
+          hand.currentBet = utg.streetBet;
+          hand.lastFullRaise = utg.streetBet >= bigBlind * 2 ? bigBlind * 2 : bigBlind;
+        }
+        hand.straddleSeat = utg.seat;
+      }
+    }
 
     // Distribution : une carte à la fois, en commençant à gauche du bouton
     const dealOrder = this.orderFrom(this.buttonSeat);
@@ -350,7 +383,7 @@ export class PokerTable {
     hand.deck = drain(deck);
 
     // Premier à parler : après la BB (en heads-up : le bouton/SB)
-    hand.toActSeat = this.firstToActAfter(bbSeat);
+    hand.toActSeat = this.firstToActAfter(hand.straddleSeat ?? bbSeat);
     this.progress();
     return hand;
   }
@@ -373,7 +406,7 @@ export class PokerTable {
     }
   }
 
-  private postBlind(p: HandPlayer, amount: number, kind: 'sb' | 'bb' | 'post'): void {
+  private postBlind(p: HandPlayer, amount: number, kind: 'sb' | 'bb' | 'post' | 'straddle'): void {
     const amt = Math.min(amount, p.stack);
     p.stack -= amt;
     p.streetBet += amt;
@@ -470,6 +503,27 @@ export class PokerTable {
     p.hasActed = true;
     p.actedLevel = h.currentBet;
     this.advanceTurn(p.seat);
+    this.progress();
+    return h.events.slice(before);
+  }
+
+  /** Active / désactive le straddle automatique d'un joueur. */
+  setStraddle(playerId: string, on: boolean): void {
+    const s = this.seatOf(playerId);
+    if (s === -1) throw new PokerError('NOT_SEATED', 'Joueur non assis');
+    if (on && !this.config.straddle) throw new PokerError('NO_STRADDLE', 'Le straddle est désactivé à cette table');
+    this.seats[s]!.straddle = on;
+  }
+
+  /** Déroule un tapis une ou deux fois (après accord des joueurs). */
+  resolveRunout(times: 1 | 2): HandEvent[] {
+    const h = this.hand;
+    if (!h || h.finished || !h.pendingRunout) throw new PokerError('NO_RUNOUT', 'Aucun tapis en attente');
+    const before = h.events.length;
+    h.pendingRunout = false;
+    h.runTimes = times;
+    h.runFrom = h.board.length;
+    h.events.push({ type: 'runItTwice', accepted: times === 2 });
     this.progress();
     return h.events.slice(before);
   }
@@ -588,7 +642,14 @@ export class PokerTable {
       h.toActSeat = null;
 
       const actors = h.players.filter((p) => this.canAct(p));
-      if (actors.length <= 1 && h.street !== 'river') this.revealAllIn();
+      if (actors.length <= 1 && h.street !== 'river') {
+        this.revealAllIn();
+        // Tapis : on propose de jouer le board deux fois avant de le dérouler
+        if (this.config.runItTwice && !h.runTimes && h.players.filter((p) => !p.folded).length >= 2) {
+          h.pendingRunout = true;
+          return;
+        }
+      }
 
       if (h.street === 'river') {
         this.showdown();
@@ -660,6 +721,10 @@ export class PokerTable {
 
   private showdown(): void {
     const h = this.hand!;
+    if (h.runTimes === 2) {
+      this.showdownTwice();
+      return;
+    }
     h.street = 'showdown';
     const live = h.players.filter((p) => !p.folded);
     const evals = new Map<string, EvaluatedHand>();
@@ -695,6 +760,60 @@ export class PokerTable {
       h.events.push({ type: 'potAwarded', potIndex: a.potIndex, amount: a.amount, winners: a.winners, shares: a.shares, description: desc, showdown: true });
     }
     h.awards = awards;
+    this.finish();
+  }
+
+  /** Showdown « run it twice » : chaque pot est coupé en deux, une moitié par board. */
+  private showdownTwice(): void {
+    const h = this.hand!;
+    h.street = 'showdown';
+    // Second board : cartes communes déjà sorties + nouvelles cartes du paquet
+    const board2 = h.board.slice(0, h.runFrom ?? 0);
+    const draw = () => {
+      const c = h.deck.shift();
+      if (!c) throw new Error('Jeu épuisé');
+      return c;
+    };
+    const added: Card[] = [];
+    while (board2.length < 5) {
+      if (board2.length === 0 || board2.length === 3 || board2.length === 4) draw(); // carte brûlée
+      const n = board2.length === 0 ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        const c = draw();
+        board2.push(c);
+        added.push(c);
+      }
+    }
+    h.board2 = board2;
+    h.events.push({ type: 'secondBoard', cards: added, board: [...board2] });
+
+    const live = h.players.filter((p) => !p.folded);
+    const order = this.orderFrom(h.buttonSeat);
+    const pots = buildPots(h.players.map((p) => ({ playerId: p.playerId, amount: p.totalBet, folded: p.folded })));
+    const allAwards: PotAward[] = [];
+    for (const run of [1, 2] as const) {
+      const board = run === 1 ? h.board : board2;
+      const evals = new Map(live.map((p) => [p.playerId, evaluateBest([...p.hole, ...board])]));
+      for (const p of live) p.shown = true;
+      h.events.push({
+        type: 'showdown', run, mucked: [],
+        hands: order.filter((p) => !p.folded).map((p) => {
+          const e = evals.get(p.playerId)!;
+          return { playerId: p.playerId, hole: [...p.hole], description: e.description, category: e.category, best: e.cards };
+        }),
+      });
+      const scores: Record<string, number> = {};
+      for (const [id, e] of evals) scores[id] = e.score;
+      // Le premier déroulé reçoit le jeton indivisible éventuel
+      const half = pots.map((pt) => ({ amount: run === 1 ? Math.ceil(pt.amount / 2) : Math.floor(pt.amount / 2), eligible: pt.eligible }));
+      const awards = distributePots(half.filter((x) => x.amount > 0), scores, order.map((p) => p.playerId));
+      for (const a of awards) {
+        for (const [id, amt] of Object.entries(a.shares)) h.players.find((p) => p.playerId === id)!.stack += amt;
+        h.events.push({ type: 'potAwarded', potIndex: a.potIndex, amount: a.amount, winners: a.winners, shares: a.shares, description: evals.get(a.winners[0]!)!.description, showdown: true, run });
+        allAwards.push(a);
+      }
+    }
+    h.awards = allAwards;
     this.finish();
   }
 

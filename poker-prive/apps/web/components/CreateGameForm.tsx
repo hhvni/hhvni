@@ -23,6 +23,7 @@ const DEFAULTS = {
   actionSeconds: 25, timeBankSeconds: 30, reloadMode: 'busted', buyIn: 0, levelMinutes: 10, anteFromLevel: 0,
   breakEvery: 0, breakMinutes: 5, rebuyAllowed: false, rebuyUntilLevel: 4, addonAllowed: false, uiLevel: 'standard',
   minBuyIn: '' as number | '', maxBuyIn: '' as number | '',
+  allowStraddle: true, runItTwice: true,
 };
 
 /** Création d'une table : préréglages en un clic + paramètres avancés. */
@@ -132,6 +133,12 @@ export function CreateGameForm({ roomId, onCreated }: { roomId: string; onCreate
               </>
             )}
           </div>
+          {v.mode === 'CASH' && (
+            <div className="space-y-1 border-t border-white/6 pt-3">
+              <Toggle label="Straddle autorisé" hint="Le joueur après la grosse blinde peut miser 2 BB à l'aveugle" checked={v.allowStraddle} onChange={(x) => set('allowStraddle', x)} />
+              <Toggle label="Run it twice autorisé" hint="Sur un tapis, les joueurs peuvent accepter de jouer le board deux fois" checked={v.runItTwice} onChange={(x) => set('runItTwice', x)} />
+            </div>
+          )}
           {v.mode === 'TOURNAMENT' && (
             <div className="space-y-1 border-t border-white/6 pt-3">
               <Toggle label="Rebuy autorisé" hint="Après élimination, pendant les premiers niveaux" checked={v.rebuyAllowed} onChange={(x) => set('rebuyAllowed', x)} />
