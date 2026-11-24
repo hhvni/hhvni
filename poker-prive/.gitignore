@@ -8,3 +8,4 @@ uploads/
 coverage/
 next-env.d.ts
 *.tsbuildinfo
+.next-new/
