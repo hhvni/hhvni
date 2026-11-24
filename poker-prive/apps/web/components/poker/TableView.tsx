@@ -142,7 +142,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
     <div
       className={cx('relative mx-auto w-full transition-[max-height,max-width] duration-300', narrow ? 'aspect-[0.66]' : 'aspect-[2.05]')}
       style={narrow
-        ? { maxHeight: `calc(100dvh - ${state.me.legal ? 300 : 210}px)`, maxWidth: `calc((100dvh - ${state.me.legal ? 300 : 210}px) * 0.66)` }
+        ? { maxHeight: `calc(100dvh - ${state.me.legal ? 345 : 210}px)`, maxWidth: `calc((100dvh - ${state.me.legal ? 345 : 210}px) * 0.66)` }
         : { maxHeight: 'calc(100dvh - 210px)', maxWidth: 'calc((100dvh - 210px) * 2.05)' }}
     >
       {/* Rail + tapis */}

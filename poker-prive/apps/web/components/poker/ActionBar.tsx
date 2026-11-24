@@ -149,7 +149,7 @@ export function ActionBar({ state, onAction }: Props) {
     return (
       <div className="flex flex-wrap items-center justify-center gap-2 py-2 md:absolute md:bottom-4 md:left-4 md:z-20 md:flex-col md:items-stretch md:py-0">
         {([['checkFold', 'Parole / Coucher', 'F'], ['check', 'Parole', 'C'], ['callAny', 'Suivre tout', '']] as const).map(([k, label, key]) => (
-          <button key={k} onClick={() => setPre(pre === k ? null : k)} className={cx('flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ring-1 backdrop-blur transition', pre === k ? 'bg-gold-400/15 text-gold-300 ring-gold-400/60' : 'bg-night-900/80 text-muted ring-white/10 hover:text-ink')}>
+          <button key={k} onClick={() => setPre(pre === k ? null : k)} className={cx('flex items-center gap-2 rounded-xl bg-gradient-to-b px-3 py-2 text-[11px] font-bold uppercase tracking-wider shadow-[0_4px_12px_rgba(0,0,0,0.5)] ring-1 backdrop-blur transition', pre === k ? 'from-[#2a2110] to-[#0b0d12] text-gold-300 ring-gold-400/70' : 'from-[#12151d]/95 to-[#07090d]/95 text-muted ring-white/10 hover:text-ink hover:ring-gold-400/30')}>
             <span className={cx('flex h-4 w-4 items-center justify-center rounded border', pre === k ? 'border-gold-400 bg-gold-400 text-night-950' : 'border-white/30')}>{pre === k && '✓'}</span>
             <span className="flex-1 text-left">{label}</span>
             {keyboard && key && <Kbd>{key}</Kbd>}
@@ -164,109 +164,166 @@ export function ActionBar({ state, onAction }: Props) {
   const toCall = l.currentBet - l.streetBet;
   const potAfterCall = l.pot + toCall;
   const potShare = potAfterCall > 0 ? Math.round(((l.currentBet === 0 ? amount : amount - l.currentBet) / potAfterCall) * 100) : 0;
+  const isAllIn = allInOnly || amount >= l.maxTo;
+
+  const sizing = canAggro && !allInOnly && (
+    <div className="space-y-2 rounded-2xl bg-gradient-to-b from-[#12151d]/95 to-[#07090d]/95 p-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.55)] ring-1 ring-gold-400/20 backdrop-blur">
+      {/* Tailles prédéfinies : de vrais jetons */}
+      <div className="-my-1 flex justify-start gap-1.5 overflow-x-auto px-1 py-1.5 scroll-thin md:justify-between">
+        {sc.map((s, i) => (
+          <SizeChip key={s.label} label={s.label} active={amount === s.to} onClick={() => setAmount(s.to)} hint={keyboard ? `Touche ${i + 1}` : undefined} />
+        ))}
+        <SizeChip label="Tapis" danger active={amount === l.maxTo} onClick={() => setAmount(l.maxTo)} hint={keyboard ? 'Touche A' : undefined} />
+      </div>
+      {/* Curseur + montant */}
+      <div className="flex items-center gap-2">
+        <StepButton label="−" onClick={() => setAmount((a) => Math.max(l.minTo, a - step))} aria="Diminuer" />
+        <input
+          type="range"
+          className="bet-slider min-w-0 flex-1"
+          min={l.minTo}
+          max={l.maxTo}
+          step={1}
+          value={amount}
+          style={{ ['--p' as string]: `${pct}%` }}
+          onChange={(e) => setAmount(Number(e.target.value))}
+          aria-label="Montant de la mise"
+        />
+        <StepButton label="+" onClick={() => setAmount((a) => Math.min(l.maxTo, a + step))} aria="Augmenter" />
+        <div className="flex shrink-0 flex-col items-end">
+          <input
+            type="number"
+            inputMode="numeric"
+            className="h-8 w-[5.2rem] rounded-lg bg-black/60 px-2 text-right font-display text-base font-bold tabular text-gold-300 shadow-[inset_0_1px_3px_rgba(0,0,0,0.8)] outline-none ring-1 ring-gold-400/25 focus:ring-gold-400/70"
+            value={amount}
+            min={l.minTo}
+            max={l.maxTo}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            onBlur={() => setAmount((a) => Math.max(l.minTo, Math.min(l.maxTo, Math.round(a) || l.minTo)))}
+            onKeyDown={(e) => e.key === 'Enter' && confirmBet()}
+            aria-label="Montant exact"
+          />
+          <span className="mt-0.5 text-[10px] leading-none tabular text-muted">
+            {formatBB(amount, bb, true)} · {potShare} % pot
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const buttons = (
+    <div className="grid grid-cols-3 gap-2">
+      <ActionButton tone="fold" onClick={() => act('fold')} disabled={busy} kbd={keyboard ? 'F' : undefined} label="Se coucher" />
+      {l.canCheck ? (
+        <ActionButton tone="call" onClick={() => act('check')} disabled={busy} kbd={keyboard ? 'C' : undefined} label="Parole" />
+      ) : (
+        <ActionButton
+          tone="call"
+          onClick={() => act('call')}
+          disabled={busy}
+          kbd={keyboard ? 'C' : undefined}
+          label={l.callAmount >= l.stack ? 'Suivre à tapis' : 'Suivre'}
+          amount={money(l.callAmount, true)}
+        />
+      )}
+      {canAggro ? (
+        <ActionButton
+          tone={isAllIn ? 'allin' : 'raise'}
+          onClick={confirmBet}
+          disabled={busy}
+          kbd={keyboard ? 'R' : undefined}
+          label={isAllIn ? 'Tapis' : l.canBet ? 'Miser' : 'Relancer à'}
+          amount={money(isAllIn ? l.maxTo : amount, true)}
+        />
+      ) : (
+        <ActionButton tone="raise" disabled label="Relance" amount="impossible" />
+      )}
+    </div>
+  );
 
   return (
-    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mx-auto w-full max-w-3xl space-y-2.5 px-1 md:max-w-5xl">
+    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: 'spring', damping: 22, stiffness: 260 }} className="mx-auto w-full px-1">
       {simple && (
-        <p className="text-center text-xs text-muted">
+        <p className="mb-1.5 text-center text-xs text-muted">
           {l.canCheck ? 'Personne n’a misé : vous pouvez checker (parole) gratuitement ou miser.' : `Pour rester dans le coup, suivez ${money(l.callAmount, true)}. Sinon couchez-vous.`}
         </p>
       )}
-      {/* Mobile : panneau de mise au-dessus des boutons ; ordinateur : sur le côté droit */}
-      <div className="flex flex-col gap-2.5 md:flex-row-reverse md:items-end md:gap-3">
-        {canAggro && !allInOnly && (
-          <div className="space-y-2 rounded-2xl bg-night-900/85 p-2.5 ring-1 ring-white/8 backdrop-blur md:w-[50%] md:shrink-0 md:space-y-1.5 md:p-2">
-            <div className="flex justify-start gap-1 overflow-x-auto scroll-thin md:justify-center">
-              {sc.map((s, i) => (
-                <button key={s.label} onClick={() => setAmount(s.to)} title={keyboard ? `Touche ${i + 1}` : undefined} className={cx('shrink-0 rounded-lg px-2 py-1 text-xs font-semibold ring-1 transition', amount === s.to ? 'bg-gold-400/20 text-gold-300 ring-gold-400/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
-                  {s.label}
-                </button>
-              ))}
-              <button onClick={() => setAmount(l.maxTo)} title={keyboard ? 'Touche A' : undefined} className={cx('shrink-0 rounded-lg px-2 py-1 text-xs font-semibold ring-1', amount === l.maxTo ? 'bg-danger/25 text-[#ffb3ba] ring-danger/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
-                Tapis
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="h-8 w-8 shrink-0 rounded-lg bg-white/5 text-lg text-muted ring-1 ring-white/10" onClick={() => setAmount((a) => Math.max(l.minTo, a - step))} aria-label="Diminuer">−</button>
-              <input
-                type="range"
-                className="slider min-w-0 flex-1"
-                min={l.minTo}
-                max={l.maxTo}
-                step={1}
-                value={amount}
-                style={{ ['--p' as string]: `${pct}%` }}
-                onChange={(e) => setAmount(Number(e.target.value))}
-                aria-label="Montant de la mise"
-              />
-              <button className="h-8 w-8 shrink-0 rounded-lg bg-white/5 text-lg text-muted ring-1 ring-white/10" onClick={() => setAmount((a) => Math.min(l.maxTo, a + step))} aria-label="Augmenter">+</button>
-              <input
-                type="number"
-                inputMode="numeric"
-                className="h-9 w-[5.5rem] shrink-0 rounded-lg border border-white/10 bg-night-950/70 px-2 text-right text-sm font-semibold tabular text-gold-300 outline-none focus:border-gold-400/60"
-                value={amount}
-                min={l.minTo}
-                max={l.maxTo}
-                onChange={(e) => setAmount(Number(e.target.value))}
-                onBlur={() => setAmount((a) => Math.max(l.minTo, Math.min(l.maxTo, Math.round(a) || l.minTo)))}
-                onKeyDown={(e) => e.key === 'Enter' && confirmBet()}
-                aria-label="Montant exact"
-              />
-              <span className="hidden w-[4.5rem] shrink-0 text-right text-[11px] leading-tight tabular text-muted sm:block">
-                {formatBB(amount, bb, true)}
-                <br />
-                <span className="text-faint">{potShare} % du pot</span>
-              </span>
-            </div>
-          </div>
-        )}
-        <div className="grid grid-cols-3 gap-2 md:flex-1">
-          <ActionButton tone="fold" onClick={() => act('fold')} disabled={busy} kbd={keyboard ? 'F' : undefined}>
-            Se coucher
-          </ActionButton>
-          {l.canCheck ? (
-            <ActionButton tone="call" onClick={() => act('check')} disabled={busy} kbd={keyboard ? 'C' : undefined}>Parole</ActionButton>
-          ) : (
-            <ActionButton tone="call" onClick={() => act('call')} disabled={busy} kbd={keyboard ? 'C' : undefined}>
-              {l.callAmount >= l.stack ? 'Tapis' : 'Suivre'} <span className="tabular">{money(l.callAmount, true)}</span>
-            </ActionButton>
-          )}
-          {canAggro ? (
-            <ActionButton tone={allInOnly || amount >= l.maxTo ? 'allin' : 'raise'} onClick={confirmBet} disabled={busy} kbd={keyboard ? 'R' : undefined}>
-              {allInOnly || amount >= l.maxTo ? 'Tapis' : l.canBet ? 'Miser' : 'Relancer à'} <span className="tabular">{money(allInOnly || amount >= l.maxTo ? l.maxTo : amount, true)}</span>
-            </ActionButton>
-          ) : (
-            <ActionButton tone="raise" disabled>Relance impossible</ActionButton>
-          )}
-        </div>
+      {/* Mobile : mise au-dessus des boutons. Ordinateur : mise à gauche, boutons à droite,
+          le centre reste libre pour la plaque du joueur. */}
+      <div
+        className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_clamp(150px,18vw,230px)_minmax(0,1fr)] md:items-end md:gap-0"
+        title={keyboard ? 'Clavier : F se coucher · C parole/suivre · R ou Entrée miser · 1–8 tailles · ↑↓ ajuster (Maj = 1 BB) · A tapis' : undefined}
+      >
+        <div className="md:col-start-1 md:max-w-[440px] md:justify-self-end md:pr-3">{sizing}</div>
+        <div className="md:col-start-3 md:w-full md:max-w-[440px] md:pl-3">{buttons}</div>
       </div>
-      {keyboard && (
-        <p className="hidden text-center text-[10px] text-faint md:block">
-          Clavier : <b>F</b> se coucher · <b>C</b> parole / suivre · <b>R</b> ou <b>Entrée</b> miser · <b>1–8</b> tailles · <b>↑ ↓</b> ajuster (Maj = 1 BB) · <b>A</b> tapis
-        </p>
-      )}
     </motion.div>
   );
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
-  return <kbd className="hidden rounded border border-white/20 bg-black/30 px-1 font-sans text-[10px] font-semibold opacity-70 md:inline">{children}</kbd>;
+  return <kbd className="hidden rounded border border-current/30 bg-black/25 px-1 font-sans text-[9px] font-semibold opacity-60 md:inline">{children}</kbd>;
 }
 
-function ActionButton({ tone, children, kbd, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone: 'fold' | 'call' | 'raise' | 'allin'; kbd?: string }) {
-  const tones = {
-    fold: 'from-[#3a1f26] to-[#2a141a] text-[#ffb3ba] ring-danger/40 hover:from-[#4a2530]',
-    call: 'from-[#1f3a6b] to-[#152a52] text-white ring-info/40 hover:from-[#26478a]',
-    raise: 'from-gold-300 via-gold-400 to-gold-600 text-night-950 ring-gold-300/60',
-    allin: 'from-[#e8616c] to-[#a3202c] text-white ring-danger/60',
-  };
+/** Taille de mise prédéfinie, dessinée comme un jeton de casino. */
+function SizeChip({ label, active, danger, onClick, hint }: { label: string; active: boolean; danger?: boolean; onClick: () => void; hint?: string }) {
+  const edge = danger ? '#e05561' : '#ecc977';
   return (
     <button
-      className={cx('relative flex h-12 flex-col items-center justify-center rounded-2xl bg-gradient-to-b text-sm font-bold leading-tight shadow-lg ring-1 transition active:scale-[0.97] disabled:opacity-40 sm:h-14 sm:flex-row sm:gap-1.5 sm:text-base', tones[tone])}
+      type="button"
+      onClick={onClick}
+      title={hint}
+      className={cx('group relative flex h-10 w-10 shrink-0 items-center md:h-11 md:w-11 justify-center rounded-full transition active:scale-95', active ? 'scale-105' : 'opacity-80 hover:opacity-100')}
+      style={{
+        background: `radial-gradient(circle, ${active ? (danger ? '#5c1520' : '#2a2110') : '#0d1018'} 0 54%, transparent 55%), repeating-conic-gradient(${edge} 0 20deg, ${active ? '#0b0d12' : '#1b1f29'} 20deg 45deg)`,
+        boxShadow: active ? `0 0 0 2px ${edge}, 0 0 14px ${danger ? 'rgba(224,85,97,0.6)' : 'rgba(236,201,119,0.55)'}` : '0 2px 6px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.06)',
+      }}
+    >
+      <span className={cx('flex flex-col items-center px-0.5 text-center text-[10px] font-extrabold leading-none tracking-tight', active ? (danger ? 'text-[#ffb3ba]' : 'text-gold-300') : 'text-white/85')}>
+        {/ BB$/.test(label) ? (
+          <>
+            {label.replace(/ BB$/, '')}
+            <span className="mt-px text-[7px] font-bold opacity-70">BB</span>
+          </>
+        ) : label.replace(' %', '%')}
+      </span>
+    </button>
+  );
+}
+
+function StepButton({ label, onClick, aria }: { label: string; onClick: () => void; aria: string }) {
+  return (
+    <button
+      type="button"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#232834] to-[#0e1117] text-lg font-bold leading-none text-gold-300 shadow-[0_2px_5px_rgba(0,0,0,0.6)] ring-1 ring-gold-400/30 transition hover:ring-gold-400/70 active:scale-95"
+      onClick={onClick}
+      aria-label={aria}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Bouton d'action « laque noire et or » : intitulé en petit, montant en grand. */
+function ActionButton({ tone, label, amount, kbd, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone: 'fold' | 'call' | 'raise' | 'allin'; label: string; amount?: string; kbd?: string }) {
+  const tones = {
+    fold: { box: 'from-[#1d1114] to-[#0b0607] ring-[#e05561]/45 hover:ring-[#e05561]/80', text: 'text-[#ff8f99]', bar: 'bg-[#e05561]' },
+    call: { box: 'from-[#0f1a16] to-[#060a08] ring-[#3ccf8e]/40 hover:ring-[#3ccf8e]/75', text: 'text-[#7ee3b5]', bar: 'bg-[#3ccf8e]' },
+    raise: { box: 'from-[#f6dea0] via-[#ecc977] to-[#b88a2e] ring-[#fff3cf]/70 hover:brightness-110', text: 'text-[#16110a]', bar: 'bg-[#fff3cf]' },
+    allin: { box: 'from-[#e8616c] to-[#8e1b28] ring-[#ffb3ba]/60 hover:brightness-110', text: 'text-white', bar: 'bg-white' },
+  }[tone];
+  return (
+    <button
+      className={cx(
+        'group relative flex h-[52px] flex-col items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b shadow-[0_6px_16px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 transition active:translate-y-px disabled:opacity-40 sm:h-[60px]',
+        tones.box,
+      )}
       {...rest}
     >
-      {children}
-      {kbd && <span className="absolute right-2 top-1.5"><Kbd>{kbd}</Kbd></span>}
+      <span className={cx('absolute inset-x-6 top-0 h-[2px] rounded-b-full opacity-80', tones.bar)} />
+      <span className={cx('text-[10px] font-bold uppercase tracking-[0.14em] sm:text-[11px]', tones.text, amount ? 'opacity-80' : 'text-[13px] sm:text-sm')}>{label}</span>
+      {amount && <span className={cx('font-display text-lg font-bold leading-tight tabular sm:text-xl', tones.text)}>{amount}</span>}
+      {kbd && <span className={cx('absolute bottom-1 right-1.5', tones.text)}><Kbd>{kbd}</Kbd></span>}
     </button>
   );
 }
