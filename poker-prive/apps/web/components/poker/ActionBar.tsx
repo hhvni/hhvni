@@ -100,15 +100,17 @@ export function ActionBar({ state, onAction }: Props) {
   const simple = state.config.uiLevel === 'simple';
 
   return (
-    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mx-auto w-full max-w-3xl space-y-2.5 px-1">
+    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mx-auto w-full max-w-3xl space-y-2.5 px-1 md:max-w-5xl">
       {simple && (
         <p className="text-center text-xs text-muted">
           {l.canCheck ? 'Personne n’a misé : vous pouvez checker (parole) gratuitement ou miser.' : `Pour rester dans le coup, suivez ${money(l.callAmount, true)}. Sinon couchez-vous.`}
         </p>
       )}
+      {/* Mobile : panneau de mise au-dessus des boutons ; ordinateur : sur le côté droit */}
+      <div className="flex flex-col gap-2.5 md:flex-row-reverse md:items-end md:gap-3">
       {canAggro && !allInOnly && (
-        <div className="space-y-2 rounded-2xl bg-night-900/85 p-2.5 ring-1 ring-white/8 backdrop-blur">
-          <div className="flex justify-start gap-1.5 overflow-x-auto scroll-thin md:flex-wrap md:justify-center">
+        <div className="space-y-2 rounded-2xl bg-night-900/85 p-2.5 ring-1 ring-white/8 backdrop-blur md:w-[46%] md:shrink-0 md:space-y-1.5 md:p-2">
+          <div className="flex justify-start gap-1.5 overflow-x-auto scroll-thin md:justify-center">
             {sc.map((s) => (
               <button key={s.label} onClick={() => setAmount(s.to)} className={cx('shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 transition', amount === s.to ? 'bg-gold-400/20 text-gold-300 ring-gold-400/60' : 'bg-white/5 text-muted ring-white/10 hover:text-ink')}>
                 {s.label}
@@ -147,7 +149,7 @@ export function ActionBar({ state, onAction }: Props) {
           </div>
         </div>
       )}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2 md:flex-1">
         <ActionButton tone="fold" onClick={() => act('fold')} disabled={busy}>
           Se coucher
         </ActionButton>
@@ -171,6 +173,7 @@ export function ActionBar({ state, onAction }: Props) {
         ) : (
           <ActionButton tone="raise" disabled>Relance impossible</ActionButton>
         )}
+      </div>
       </div>
     </motion.div>
   );
