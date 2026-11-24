@@ -115,6 +115,8 @@ export interface GameView {
   config: GameConfig;
   seats: (PublicSeat | null)[];
   board: Card[];
+  /** Suspense avant la river d'un tapis : board (1 ou 2) dont la river est encore face cachée. */
+  suspense: 1 | 2 | null;
   /** La main en cours est un straddle général (tout le monde à 2 BB, pas d'enchères préflop). */
   bombPot: boolean;
   /** Second board (run it twice), sinon null. */

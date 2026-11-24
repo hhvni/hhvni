@@ -94,4 +94,16 @@ export const sounds = {
     tone(0.13, 990, 0.18, 0.1, 'sine');
   },
   tick: () => tone(0, 1500, 0.04, 0.06, 'square'),
+  /** Battement de cœur pendant le suspense de la river. */
+  heartbeat: (beats = 3) => {
+    for (let i = 0; i < beats; i++) {
+      tone(i * 0.85, 62, 0.16, 0.3, 'sine', 45);
+      tone(i * 0.85 + 0.2, 58, 0.18, 0.22, 'sine', 42);
+    }
+  },
+  /** Retournement lent de la river. */
+  reveal: () => {
+    burst(0, { freq: 1800, q: 0.6, dur: 0.35, gain: 0.25, type: 'bandpass' });
+    tone(0.25, 523, 0.5, 0.05, 'triangle');
+  },
 };

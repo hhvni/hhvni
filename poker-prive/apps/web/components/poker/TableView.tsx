@@ -54,6 +54,8 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
   const displayIndex = (seat: number) => (seat - rotation + n) % n;
 
   const winners = useMemo(() => new Set(state.result?.pots.flatMap((p) => p.winners) ?? []), [state.result]);
+  // Déroulé d'un tapis en cours (cartes retournées, résultat pas encore affiché)
+  const runoutView = !state.result && (!!state.equity || !!state.suspense);
 
   /** Position (en %) de la mise d'un siège. Le joueur du bas a de grandes cartes : sa mise est plus haute. */
   const betPos = (i: number) => {
@@ -137,10 +139,11 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
           {Array.from({ length: 5 }, (_, i) => {
             const c = state.board[i];
             return (
-              <div key={i} className="rounded-[7px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 36 : 50, height: narrow ? 50 : 70 }}>
+              <div key={i} className="relative rounded-[7px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 36 : 50, height: narrow ? 50 : 70 }}>
                 <AnimatePresence>
+                  {!c && i === 4 && state.suspense === 1 && <SuspenseCard size={narrow ? 'sm' : 'md'} />}
                   {c && (
-                    <motion.div key={`${state.handNumber}-${c}`} initial={{ y: -30, opacity: 0, rotateY: 180 }} animate={{ y: 0, opacity: 1, rotateY: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ type: 'spring', damping: 18, stiffness: 200, delay: i < 3 ? i * 0.08 : 0 }}>
+                    <motion.div key={`${state.handNumber}-${c}`} className="absolute inset-0" {...cardAnim(i, runoutView)}>
                       <PlayingCard card={c} size={narrow ? 'sm' : 'md'} highlight={bestCards.has(c)} dim={!!state.result && bestCards.size > 0 && !bestCards.has(c)} />
                     </motion.div>
                   )}
@@ -156,10 +159,11 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
             {Array.from({ length: 5 }, (_, i) => {
               const c = state.board2![i];
               return (
-                <div key={i} className="rounded-[6px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 30 : 40, height: narrow ? 42 : 56 }}>
+                <div key={i} className="relative rounded-[6px] bg-black/15 ring-1 ring-white/[0.06]" style={{ width: narrow ? 30 : 40, height: narrow ? 42 : 56 }}>
                   <AnimatePresence>
+                    {!c && i === 4 && state.suspense === 2 && <SuspenseCard size={narrow ? 'xs' : 'sm'} />}
                     {c && (
-                      <motion.div key={`b2-${state.handNumber}-${c}`} initial={{ y: -20, opacity: 0, rotateY: 180 }} animate={{ y: 0, opacity: 1, rotateY: 0 }} transition={{ type: 'spring', damping: 18, stiffness: 200, delay: i < 3 ? i * 0.08 : 0 }}>
+                      <motion.div key={`b2-${state.handNumber}-${c}`} className="absolute inset-0" {...cardAnim(i, runoutView)}>
                         <PlayingCard card={c} size={narrow ? 'xs' : 'sm'} />
                       </motion.div>
                     )}
@@ -464,4 +468,44 @@ function Seat({
 function pctLabel(p: number): string {
   const v = p * 100;
   return `${v.toLocaleString('fr-FR', { maximumFractionDigits: v > 0 && v < 10 ? 1 : 0 })} %`;
+}
+
+/** Animation d'arrivée d'une carte du board ; la river d'un tapis se retourne lentement. */
+function cardAnim(i: number, runout: boolean) {
+  if (runout && i === 4) {
+    // River d'un tapis : la carte se découvre lentement de gauche à droite,
+    // pendant que la carte face cachée glisse (effet « squeeze » des retransmissions)
+    return {
+      initial: { clipPath: 'inset(0% 100% 0% 0% round 7px)', scale: 1.12, opacity: 1 },
+      animate: { clipPath: 'inset(0% 0% 0% 0% round 7px)', scale: [1.12, 1.12, 1], opacity: 1 },
+      exit: { opacity: 0, scale: 0.8 },
+      transition: { clipPath: { duration: 2.2, ease: [0.55, 0, 0.25, 1] as const }, scale: { duration: 2.8, times: [0, 0.8, 1] } },
+    };
+  }
+  return {
+    initial: { y: -30, opacity: 0, rotateY: 180 },
+    animate: { y: 0, opacity: 1, rotateY: 0 },
+    exit: { opacity: 0, scale: 0.8 },
+    transition: runout
+      ? { duration: 0.7, ease: 'easeOut' as const, delay: i < 3 ? i * 0.25 : 0 }
+      : { type: 'spring' as const, damping: 18, stiffness: 200, delay: i < 3 ? i * 0.08 : 0 },
+  };
+}
+
+/** River encore face cachée pendant le suspense : halo doré qui pulse. */
+function SuspenseCard({ size }: { size: 'xs' | 'sm' | 'md' }) {
+  return (
+    <motion.div
+      key="suspense"
+      className="absolute inset-0 z-10 rounded-[7px]"
+      initial={{ y: -24, opacity: 0 }}
+      animate={{ y: 0, opacity: 1, boxShadow: ['0 0 0 0 rgba(236,201,119,0.0)', '0 0 22px 6px rgba(236,201,119,0.55)', '0 0 0 0 rgba(236,201,119,0.0)'] }}
+      exit={{ x: '105%', opacity: [1, 1, 0], transition: { duration: 2.2, ease: [0.55, 0, 0.25, 1], opacity: { times: [0, 0.85, 1], duration: 2.2 } } }}
+      transition={{ y: { duration: 0.5 }, opacity: { duration: 0.5 }, boxShadow: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }}
+    >
+      <motion.div animate={{ rotate: [0, -1.5, 1.5, 0] }} transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}>
+        <PlayingCard faceDown size={size} />
+      </motion.div>
+    </motion.div>
+  );
 }

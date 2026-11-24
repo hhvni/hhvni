@@ -75,6 +75,8 @@ interface Staging {
   visibleBoard: number;
   /** Cartes visibles du second board (null tant qu'il n'est pas commencé). */
   visible2?: number | null;
+  /** River encore face cachée (suspense) sur le board 1 ou 2. */
+  suspense?: 1 | 2 | null;
   resultVisible: boolean;
 }
 
@@ -879,6 +881,8 @@ export class GameRuntime {
         this.log(text, 'action');
       } else if (e.type === 'street') {
         for (const m of this.meta.values()) m.lastAction = null;
+        // Tapis : les rues sont annoncées au rythme du déroulé (voir onHandFinished)
+        if (this.table.hand?.finished || this.table.hand?.pendingRunout) continue;
         const label = e.street === 'flop' ? 'Flop' : e.street === 'turn' ? 'Turn' : 'River';
         this.log(`${label} : ${e.cards.map(cardLabel).join(' ')}`, 'hand');
       } else if (e.type === 'uncalled') {
@@ -913,11 +917,11 @@ export class GameRuntime {
       this.staging.resultVisible = true;
       this.announceWinners();
       this.changed();
-      this.scheduleNextHand(showdown ? (twice ? 7000 : 5000) : 3000);
+      this.scheduleNextHand(showdown ? (twice ? 8000 : 5500) : 3000);
     };
     this.equityByBoard.clear();
     if (stageCount > 0) {
-      this.staging = { visibleBoard: boardBefore, visible2: null, resultVisible: false };
+      this.staging = { visibleBoard: boardBefore, visible2: null, suspense: null, resultVisible: false };
       // Probabilités de gain à chaque étape du déroulé (mains dévoilées uniquement)
       const live = h.players.filter((p) => !p.folded && p.shown);
       if (live.length >= 2) {
@@ -931,29 +935,70 @@ export class GameRuntime {
           }
         }
       }
-      // Étapes : rues du premier board, puis celles du second
+      // Déroulé façon retransmission : chaque rue avec une pause, la river reste
+      // face cachée quelques secondes (suspense) puis se retourne lentement.
       const sizes = (from: number) => (from === 0 ? [3, 1, 1] : from === 3 ? [1, 1] : from === 4 ? [1] : []);
-      const steps: (1 | 2)[] = [...sizes(boardBefore).map(() => 1 as const), ...(twice ? sizes(boardBefore).map(() => 2 as const) : [])];
-      const s1 = sizes(boardBefore);
-      let i1 = 0;
-      let i2 = 0;
+      const STEP = FAST ? 5 : 2200; // entre deux rues
+      const SUSPENSE = FAST ? 5 : 2800; // river face cachée
+      const AFTER_RIVER = FAST ? 5 : 2400; // le temps de voir la river avant le résultat
+      const BETWEEN_BOARDS = FAST ? 5 : 2200; // pause avant le second board
+      type Step = { run: 1 | 2; size: number; river: boolean };
+      const plan: Step[] = [];
+      for (const run of twice ? [1, 2] as const : [1] as const) {
+        let len = boardBefore;
+        for (const size of sizes(boardBefore)) {
+          len += size;
+          plan.push({ run, size, river: len === 5 });
+        }
+      }
+      const board1 = h.board;
+      const board2 = h.board2;
+      const announce = (run: 1 | 2, from: number, size: number) => {
+        const cards = (run === 1 ? board1 : board2!).slice(from, from + size);
+        const label = from === 0 ? 'Flop' : from === 3 ? 'Turn' : 'River';
+        this.log(`${run === 2 ? '2ᵉ board — ' : twice ? '1ᵉʳ board — ' : ''}${label} : ${cards.map(cardLabel).join(' ')}`, 'hand');
+      };
       let k = 0;
+      const reveal = (st: Step) => {
+        if (st.run === 1) {
+          announce(1, this.staging.visibleBoard, st.size);
+          this.staging.visibleBoard += st.size;
+        } else {
+          if (this.staging.visible2 == null) this.staging.visible2 = boardBefore;
+          announce(2, this.staging.visible2, st.size);
+          this.staging.visible2 += st.size;
+        }
+        this.staging.suspense = null;
+      };
       const tick = () => {
         if (this.disposed) return;
-        if (k < steps.length) {
-          if (steps[k] === 1) this.staging.visibleBoard += s1[i1++]!;
-          else {
-            if (this.staging.visible2 === null || this.staging.visible2 === undefined) this.staging.visible2 = boardBefore;
-            this.staging.visible2 += s1[i2++]!;
-          }
-          k++;
-          this.changed();
-          this.stagingTimer = setTimeout(tick, FAST ? 5 : 1400);
-        } else {
+        const st = plan[k];
+        if (!st) {
           resultDelay();
+          return;
         }
+        const firstOfRun2 = st.run === 2 && (k === 0 || plan[k - 1]!.run === 1);
+        if (firstOfRun2 && this.staging.visible2 == null) {
+          // Le second board apparaît avec les cartes communes, puis se déroule
+          this.staging.visible2 = boardBefore;
+          this.log('Second board', 'hand');
+          this.changed();
+          this.stagingTimer = setTimeout(tick, BETWEEN_BOARDS);
+          return;
+        }
+        if (st.river && this.staging.suspense !== st.run) {
+          // River face cachée : suspense
+          this.staging.suspense = st.run;
+          this.changed();
+          this.stagingTimer = setTimeout(tick, SUSPENSE);
+          return;
+        }
+        reveal(st);
+        k++;
+        this.changed();
+        this.stagingTimer = setTimeout(tick, st.river ? AFTER_RIVER : STEP);
       };
-      this.stagingTimer = setTimeout(tick, FAST ? 5 : 900);
+      this.stagingTimer = setTimeout(tick, FAST ? 5 : 1200);
     } else {
       this.staging = { visibleBoard: h.board.length, visible2: h.board2 ? 5 : null, resultVisible: true };
       this.announceWinners();
@@ -1389,6 +1434,7 @@ export class GameRuntime {
         ? (this.equityByBoard.get(this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard) ?? null)
         : this.runoutVote ? (this.runoutEquity() ?? null) : null,
       bombPot: !!h?.bombPot && !h.finished,
+      suspense: h?.finished && !resultVisible ? (this.staging.suspense ?? null) : null,
       board2: h?.board2 ? (h.finished && !resultVisible ? (this.staging.visible2 != null ? h.board2.slice(0, this.staging.visible2) : null) : h.board2) : null,
       runout: this.runoutVote ? { deadline: this.runoutVote.deadline, votes: [...this.runoutVote.votes].map(([id, vote]) => ({ userId: id, vote })) } : null,
     };

@@ -111,7 +111,16 @@ function Game({ gameId }: { gameId: string }) {
     }
   }, [logs, prefs.sound]);
 
-  // Tic-tac pendant les 5 dernières secondes de notre tour
+  // Suspense de la river d'un tapis : battement de cœur puis retournement
+  const suspenseRef = useRef<1 | 2 | null>(null);
+  useEffect(() => {
+    const cur = state?.suspense ?? null;
+    if (prefs.sound && cur && cur !== suspenseRef.current) sounds.heartbeat();
+    if (prefs.sound && !cur && suspenseRef.current) sounds.reveal();
+    suspenseRef.current = cur;
+  }, [state?.suspense, prefs.sound]);
+
+    // Tic-tac pendant les 5 dernières secondes de notre tour
   useEffect(() => {
     if (!prefs.sound || !state?.turn || state.turn.userId !== state.me.userId) return;
     const deadline = state.turn.deadline;
