@@ -54,6 +54,36 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
   const displayIndex = (seat: number) => (seat - rotation + n) % n;
 
   const winners = useMemo(() => new Set(state.result?.pots.flatMap((p) => p.winners) ?? []), [state.result]);
+
+  /** Position (en %) de la mise d'un siège. Le joueur du bas a de grandes cartes : sa mise est plus haute. */
+  const betPos = (i: number) => {
+    const bottom = displayIndex(i) === 0;
+    return ellipse(displayIndex(i), n, narrow ? 22 : 30, bottom ? (narrow ? 13 : 16) : narrow ? 19 : 23);
+  };
+
+  // Ramassage des mises vers le pot à la fin de chaque tour d'enchères
+  const prevBets = useRef<{ hand: number; bets: Map<number, number> }>({ hand: -1, bets: new Map() });
+  const [flying, setFlying] = useState<{ id: number; x: number; y: number; amount: number }[]>([]);
+  useEffect(() => {
+    const prev = prevBets.current;
+    const now = new Map<number, number>();
+    state.seats.forEach((s, i) => s && s.streetBet > 0 && now.set(i, s.streetBet));
+    if (prev.hand === state.handNumber) {
+      const moved: { id: number; x: number; y: number; amount: number }[] = [];
+      for (const [i, amount] of prev.bets) {
+        if (!now.has(i)) {
+          const p = betPos(i);
+          moved.push({ id: Date.now() + Math.random(), x: p.x, y: p.y, amount });
+        }
+      }
+      if (moved.length) {
+        setFlying((f) => [...f, ...moved]);
+        setTimeout(() => setFlying((f) => f.filter((x) => !moved.includes(x))), 650);
+      }
+    }
+    prevBets.current = { hand: state.handNumber, bets: now };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.seats, state.handNumber]);
   const bestCards = useMemo(() => {
     if (!state.result) return new Set<string>();
     const ids = new Set(state.result.pots.flatMap((p) => p.winners));
@@ -132,9 +162,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
       {/* Mises devant les joueurs */}
       {seatsList.map(({ s, i }) => {
         if (!s || s.streetBet <= 0) return null;
-        // Le joueur du bas a de grandes cartes au-dessus de son avatar : sa mise est placée plus haut
-        const bottom = displayIndex(i) === 0;
-        const p = ellipse(displayIndex(i), n, narrow ? 22 : 30, bottom ? (narrow ? 13 : 16) : narrow ? 19 : 23);
+        const p = betPos(i);
         return (
           <div key={`bet-${i}`} className="absolute z-[25] -translate-x-1/2 -translate-y-1/2" style={{ left: `${p.x}%`, top: `${p.y}%` }}>
             <ChipStack amount={s.streetBet} size={narrow ? 14 : 18} />
@@ -152,6 +180,19 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
         );
       })()}
 
+      {/* Mises ramassées vers le pot */}
+      {flying.map((f) => (
+        <motion.div
+          key={f.id}
+          className="pointer-events-none absolute z-[24] -translate-x-1/2 -translate-y-1/2"
+          initial={{ left: `${f.x}%`, top: `${f.y}%`, opacity: 1, scale: 1 }}
+          animate={{ left: '50%', top: '36%', opacity: [1, 1, 0], scale: 0.85 }}
+          transition={{ duration: 0.55, ease: 'easeIn' }}
+        >
+          <ChipStack amount={f.amount} size={narrow ? 14 : 18} label={false} />
+        </motion.div>
+      ))}
+
       {/* Jetons gagnés qui glissent vers le vainqueur */}
       <AnimatePresence>
         {state.result && state.result.pots.flatMap((pot, pi) => pot.winners.map((w) => {
@@ -159,7 +200,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
           if (!seat) return null;
           const p = ellipse(displayIndex(seat.seat), n, rx * 0.8, ry * 0.8);
           return (
-            <motion.div key={`win-${state.result!.handNumber}-${pi}-${w}`} className="absolute z-10 -translate-x-1/2 -translate-y-1/2" initial={{ left: '50%', top: '36%', opacity: 1 }} animate={{ left: `${p.x}%`, top: `${p.y}%`, opacity: [1, 1, 0] }} transition={{ duration: 1.2, delay: 0.5 + pi * 0.3, ease: 'easeInOut' }}>
+            <motion.div key={`win-${state.result!.handNumber}-${pi}-${w}`} className="pointer-events-none absolute z-[26] -translate-x-1/2 -translate-y-1/2" initial={{ left: '50%', top: '36%', opacity: 0, scale: 1.15 }} animate={{ left: ['50%', '50%', `${p.x}%`, `${p.x}%`], top: ['36%', '36%', `${p.y}%`, `${p.y}%`], opacity: [0, 1, 1, 0], scale: [1.15, 1.15, 1, 1] }} transition={{ duration: 1.5, delay: 0.55 + pi * 0.35, ease: 'easeInOut', times: [0, 0.3, 0.85, 1] }}>
               <ChipStack amount={Math.floor(pot.amount / pot.winners.length)} size={18} />
             </motion.div>
           );

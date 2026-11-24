@@ -9,6 +9,7 @@ import { useRequireAuth } from '@/lib/auth';
 import { emit } from '@/lib/socket';
 import { fmt, mmss } from '@/lib/format';
 import { useGame } from '@/lib/useGame';
+import { sounds, unlockAudio } from '@/lib/sounds';
 import { BigBlindContext, setDisplayPrefs, useDisplayPrefs } from '@/lib/displayPrefs';
 import { useVideoChat, type VideoChat } from '@/lib/useVideoChat';
 import { TableView } from '@/components/poker/TableView';
@@ -45,26 +46,6 @@ function usePrefs(): [Prefs, (p: Partial<Prefs>) => void] {
   return [prefs, update];
 }
 
-/** Petit signal sonore discret quand c'est à vous de jouer. */
-function beep() {
-  try {
-    const ctx = new AudioContext();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.0001, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 0.26);
-    setTimeout(() => void ctx.close(), 400);
-  } catch {
-    /* audio indisponible */
-  }
-}
-
 export default function GamePage() {
   const me = useRequireAuth();
   const { id } = useParams<{ id: string }>();
@@ -89,9 +70,57 @@ function Game({ gameId }: { gameId: string }) {
   useEffect(() => {
     if (state?.me.legal && state.actionSeq !== myTurnSeq.current) {
       myTurnSeq.current = state.actionSeq;
-      if (prefs.sound) beep();
+      if (prefs.sound) sounds.turn();
     }
   }, [state?.me.legal, state?.actionSeq, prefs.sound]);
+
+  // Le navigateur n'autorise le son qu'après une interaction
+  useEffect(() => {
+    const on = () => unlockAudio();
+    window.addEventListener('pointerdown', on, { once: true });
+    window.addEventListener('keydown', on, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', on);
+      window.removeEventListener('keydown', on);
+    };
+  }, []);
+
+  // Sons de la table, déclenchés par le journal des actions
+  const lastLogId = useRef<number | null>(null);
+  useEffect(() => {
+    const last = logs.at(-1);
+    if (!last) return;
+    if (lastLogId.current === null) {
+      lastLogId.current = last.id; // pas de son pour l'historique chargé à l'arrivée
+      return;
+    }
+    const fresh = logs.filter((x) => x.id > lastLogId.current!);
+    lastLogId.current = last.id;
+    if (!prefs.sound) return;
+    for (const line of fresh.slice(-3)) {
+      const t = line.text;
+      if (line.kind === 'win' && /remporte|partagent/.test(t)) sounds.win();
+      else if (line.kind === 'hand' && t.startsWith('Nouvelle main')) sounds.card(6);
+      else if (line.kind === 'hand') sounds.card(t.startsWith('Flop') ? 3 : 1);
+      else if (line.kind === 'action') {
+        if (/à tapis/.test(t)) sounds.allIn();
+        else if (/se couche|jette sa main/.test(t)) sounds.fold();
+        else if (/ parole$/.test(t)) sounds.check();
+        else if (/ suit | mise | relance /.test(t)) sounds.bet();
+      }
+    }
+  }, [logs, prefs.sound]);
+
+  // Tic-tac pendant les 5 dernières secondes de notre tour
+  useEffect(() => {
+    if (!prefs.sound || !state?.turn || state.turn.userId !== state.me.userId) return;
+    const deadline = state.turn.deadline;
+    const id = setInterval(() => {
+      const left = deadline - now();
+      if (left > 0 && left <= 5200) sounds.tick();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [state?.turn, state?.me.userId, prefs.sound, now]);
 
   const run = useCallback(async (event: string, payload: Record<string, unknown> = {}, success?: string) => {
     const r = await send(event, payload);
@@ -563,7 +592,7 @@ function VideoSettings({ open, onClose, video, prefs, setPrefs }: { open: boolea
         </div>
         <div className="space-y-1 border-t border-white/6 pt-3">
           <Toggle label="Afficher la vidéo des autres joueurs" checked={prefs.showRemote} onChange={(v) => setPrefs({ showRemote: v })} />
-          <Toggle label="Son « à vous de jouer »" checked={prefs.sound} onChange={(v) => setPrefs({ sound: v })} />
+          <Toggle label="Sons de la table" hint="Jetons, cartes, « à vous de jouer », tic-tac des 5 dernières secondes" checked={prefs.sound} onChange={(v) => setPrefs({ sound: v })} />
           <DisplayToggles />
         </div>
         <div>
@@ -611,6 +640,7 @@ function DisplayToggles() {
   return (
     <>
       <Toggle label="Montants en grosses blindes" hint="Ex. 50 → 0,5 BB · 100 → 1 BB (aussi via le bouton BB en haut)" checked={d.bbMode} onChange={(v) => setDisplayPrefs({ bbMode: v })} />
+      <Toggle label="Raccourcis clavier" hint="F se coucher · C parole/suivre · R miser · 1–8 tailles · ↑↓ ajuster" checked={d.keyboard} onChange={(v) => setDisplayPrefs({ keyboard: v })} />
       <Toggle label="Jeu 4 couleurs" hint="Carreaux bleus et trèfles verts, plus lisible ; sinon jeu classique rouge et noir" checked={d.fourColor} onChange={(v) => setDisplayPrefs({ fourColor: v })} />
     </>
   );

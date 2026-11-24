@@ -9,10 +9,12 @@ import { compact, fmt } from './format';
 export interface DisplayPrefs {
   fourColor: boolean;
   bbMode: boolean;
+  /** Raccourcis clavier à la table (ordinateur). */
+  keyboard: boolean;
 }
 
 const KEY = 'pp-display-prefs';
-const DEFAULTS: DisplayPrefs = { fourColor: true, bbMode: false };
+const DEFAULTS: DisplayPrefs = { fourColor: true, bbMode: false, keyboard: true };
 let current: DisplayPrefs = DEFAULTS;
 let loaded = false;
 const listeners = new Set<() => void>();
