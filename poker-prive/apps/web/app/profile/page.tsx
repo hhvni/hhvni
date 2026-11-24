@@ -7,7 +7,8 @@ import { fmt, signed, timeAgo } from '@/lib/format';
 import { AppShell } from '@/components/AppShell';
 import { StatsView, type UserStats } from '@/components/StatsView';
 import { MiniCards } from '@/components/poker/PlayingCard';
-import { Avatar, Badge, Button, Empty, Input, PageLoader, Panel, useToast } from '@/components/ui';
+import { Avatar, Badge, Button, cx, Empty, Input, PageLoader, Panel, useToast } from '@/components/ui';
+import { AVATAR_PRESETS, PRESET_PREFIX } from '@/components/ui/avatars';
 
 interface HandItem { id: string; handNumber: number; board: string[]; pot: number; endedAt: string; game: string; room: string; cards: string[]; net: number; won: boolean }
 
@@ -95,10 +96,39 @@ function Profile() {
           </div>
         </div>
         <div className="flex gap-2">
-          {me.avatarUrl && <Button variant="subtle" size="sm" onClick={async () => { await api('/users/me/avatar', { method: 'DELETE' }); await refresh(); }}>Retirer la photo</Button>}
+          {me.avatarUrl && <Button variant="subtle" size="sm" onClick={async () => { await api('/users/me/avatar', { method: 'DELETE' }); await refresh(); }}>{me.avatarUrl.startsWith(PRESET_PREFIX) ? 'Retirer l’avatar' : 'Retirer la photo'}</Button>}
           <Button variant="subtle" size="sm" onClick={() => void logout()}>Se déconnecter</Button>
         </div>
       </div>
+
+      <Panel title="Choisir un avatar">
+        <p className="mb-3 text-xs text-muted">Collection noir &amp; or — ou cliquez sur votre photo ci-dessus pour envoyer la vôtre.</p>
+        <div className="grid grid-cols-5 gap-3 sm:grid-cols-8 lg:grid-cols-10">
+          {AVATAR_PRESETS.map((p) => {
+            const selected = me.avatarUrl === PRESET_PREFIX + p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                title={p.label}
+                aria-pressed={selected}
+                onClick={async () => {
+                  try {
+                    await api('/users/me/avatar/preset', { body: { id: p.id } });
+                    await refresh();
+                  } catch (err) {
+                    toast((err as Error).message, 'error');
+                  }
+                }}
+                className={cx('flex flex-col items-center gap-1 rounded-xl p-1.5 transition hover:bg-white/5', selected && 'bg-gold-400/10 ring-1 ring-gold-400/60')}
+              >
+                <Avatar name={p.label} url={PRESET_PREFIX + p.id} size={52} />
+                <span className="text-[10px] text-muted">{p.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Panel>
 
       <StatsView stats={stats} />
 

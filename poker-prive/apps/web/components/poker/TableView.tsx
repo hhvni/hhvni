@@ -3,7 +3,7 @@
  * Rendu de la table : tapis, sièges, cartes, mises, pots, résultat.
  * Purement visuel : toutes les données viennent de la vue filtrée du serveur.
  */
-import { AnimatePresence, motion } from 'framer-motion';
+import { animate, AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { evaluateBest, type Card, type GameView, type PublicSeat } from '@poker/engine';
 import { describeHand, type HandHint } from '@/lib/handHint';
@@ -245,14 +245,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
       })}
 
       {/* Bouton dealer */}
-      {state.buttonSeat >= 0 && (() => {
-        const p = ellipse(displayIndex(state.buttonSeat) + 0.3, n, narrow ? 27 : 35, narrow ? 29 : 31);
-        return (
-          <motion.div layout className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-b from-white to-[#d7dbe3] text-[11px] font-black text-night-950 shadow-[0_2px_6px_rgba(0,0,0,0.6)] ring-1 ring-black/20" style={{ left: `${p.x}%`, top: `${p.y}%` }} transition={{ type: 'spring', damping: 20 }}>
-            D
-          </motion.div>
-        );
-      })()}
+      {state.buttonSeat >= 0 && <DealerButton key={narrow ? "n" : "w"} index={displayIndex(state.buttonSeat)} n={n} rx={narrow ? 27 : 35} ry={narrow ? 29 : 31} />}
 
       {/* Mises ramassées vers le pot */}
       {flying.map((f) => (
@@ -607,6 +600,39 @@ function Seat({
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** Bouton dealer : glisse le long de la table d'un siège au suivant. */
+function DealerButton({ index, n, rx, ry }: { index: number; n: number; rx: number; ry: number }) {
+  const pos = useMotionValue(index);
+  const last = useRef(index);
+  const scale = useMotionValue(1);
+  useEffect(() => {
+    let target = index;
+    const cur = last.current;
+    let d = (((target - cur) % n) + n) % n; // distance dans le sens du jeu
+    if (d > n / 2) d -= n; // demi-tour (rotation de l'affichage) : chemin le plus court
+    target = cur + d;
+    last.current = target;
+    if (d === 0) return;
+    const a = animate(pos, target, { duration: 0.6 + Math.abs(d) * 0.25, ease: [0.45, 0, 0.25, 1] });
+    const b = animate(scale, [1, 1.25, 1], { duration: 0.6 + Math.abs(d) * 0.25 });
+    return () => {
+      a.stop();
+      b.stop();
+    };
+  }, [index, n, pos, scale]);
+  const left = useTransform(pos, (v) => `${ellipse(v + 0.3, n, rx, ry).x}%`);
+  const top = useTransform(pos, (v) => `${ellipse(v + 0.3, n, rx, ry).y}%`);
+  return (
+    <motion.div
+      className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-b from-white to-[#d7dbe3] text-[11px] font-black text-night-950 shadow-[0_2px_6px_rgba(0,0,0,0.6)] ring-1 ring-black/20"
+      style={{ left, top, scale }}
+      title="Bouton dealer"
+    >
+      D
+    </motion.div>
   );
 }
 

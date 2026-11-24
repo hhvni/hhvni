@@ -1,4 +1,5 @@
 'use client';
+import { InitialsAvatar, PRESET_PREFIX, PresetAvatar, presetOf } from './avatars';
 /** Composants d'interface de base (boutons, champs, panneaux, avatar…). */
 import { AnimatePresence, motion } from 'framer-motion';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
@@ -117,15 +118,17 @@ export function PageLoader() {
   );
 }
 
-const AVATAR_COLORS = ['#e05561', '#4f8ff7', '#3ccf8e', '#ecc977', '#a77bf3', '#f59e5b', '#2dd4bf', '#f472b6'];
 export function Avatar({ name, url, size = 40, className, ring }: { name: string; url?: string | null; size?: number; className?: string; ring?: string }) {
-  const color = AVATAR_COLORS[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % AVATAR_COLORS.length];
+  const preset = presetOf(url);
+  const photo = url && !preset && !url.startsWith(PRESET_PREFIX) ? url : null;
   return (
     <span
-      className={cx('relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold text-night-950', className)}
-      style={{ width: size, height: size, fontSize: size * 0.4, background: url ? '#0d1524' : `linear-gradient(140deg, ${color}, ${color}99)`, boxShadow: ring }}
+      className={cx('relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-night-800', className)}
+      style={{ width: size, height: size, boxShadow: ring }}
+      role="img"
+      aria-label={name}
     >
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" draggable={false} /> : name.slice(0, 2).toUpperCase()}
+      {photo ? <img src={photo} alt="" className="h-full w-full object-cover" draggable={false} /> : preset ? <PresetAvatar preset={preset} /> : <InitialsAvatar name={name} />}
     </span>
   );
 }

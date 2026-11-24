@@ -84,6 +84,16 @@ usersRouter.post('/me/avatar', ah(async (req, res) => {
   res.json({ avatarUrl });
 }));
 
+/** Avatar de la galerie intégrée (« preset:<id> », dessiné par le navigateur). */
+usersRouter.post('/me/avatar/preset', ah(async (req, res) => {
+  const { id } = z.object({ id: z.string().regex(/^[a-z0-9-]{2,20}$/) }).parse(req.body);
+  const old = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { avatarUrl: true } });
+  const avatarUrl = `preset:${id}`;
+  await prisma.user.update({ where: { id: req.user!.id }, data: { avatarUrl } });
+  if (old?.avatarUrl?.startsWith('/uploads/')) await unlink(join(uploadDir, old.avatarUrl.slice('/uploads/'.length).replace(/[^\w.-]/g, ''))).catch(() => undefined);
+  res.json({ avatarUrl });
+}));
+
 usersRouter.delete('/me/avatar', ah(async (req, res) => {
   await prisma.user.update({ where: { id: req.user!.id }, data: { avatarUrl: null } });
   res.json({ ok: true });

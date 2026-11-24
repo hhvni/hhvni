@@ -10,6 +10,8 @@ import { botStyleOf, type BotStyle } from './botBrain.js';
 export const BOT_EMAIL_DOMAIN = '@bots.cercle-prive.local';
 export const isBotEmail = (email: string) => email.endsWith(BOT_EMAIL_DOMAIN);
 
+const BOT_AVATARS: Record<BotStyle, string> = { requin: 'shark', roc: 'spade', fou: 'flame', pigeon: 'chip' };
+
 export const BOT_NAMES = ['Ada', 'Bruno', 'Chloé', 'Dédé', 'Émile', 'Fanny', 'Gaston', 'Hélène', 'Igor', 'Josette', 'Kiki', 'Lulu', 'Marcel', 'Nina', 'Oscar'];
 
 /** Retourne un robot libre (crée le compte si besoin) avec un solde suffisant. */
@@ -33,6 +35,8 @@ export async function getBotUser(exclude: string[], minChips: number): Promise<{
     });
   }
   if (bot.chips < minChips) bot = await prisma.user.update({ where: { id: bot.id }, data: { chips: 1_000_000 } });
+  // Avatar de la galerie selon le caractère du robot
+  if (!bot.avatarUrl) bot = await prisma.user.update({ where: { id: bot.id }, data: { avatarUrl: `preset:${BOT_AVATARS[botStyleFor(bot.username)]}` } });
   return { id: bot.id, username: bot.username, avatarUrl: bot.avatarUrl };
 }
 
