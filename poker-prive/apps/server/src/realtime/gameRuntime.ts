@@ -88,6 +88,8 @@ interface RuntimeSnapshot {
   registered: string[];
   bombRequestedBy?: string | null;
   lastBombHand?: number | null;
+  bombMult?: number;
+  bombSpin?: { value: number; by: string; at: number } | null;
 }
 
 export interface RuntimeInit {
@@ -124,6 +126,13 @@ export class GameRuntime {
   bombRequestedBy: string | null = null;
   /** Numéro de la dernière main jouée en straddle général. */
   lastBombHand: number | null = null;
+  /** Montant du straddle général prévu, en grosses blindes (2 ou tiré à la roulette). */
+  bombMult = 2;
+  /** Roulette en cours / tirée : animée chez tous les joueurs. */
+  bombSpin: { value: number; by: string; at: number } | null = null;
+  static readonly SPIN_MS = 5200;
+  /** Montant (en BB) du straddle général de la main en cours. */
+  private currentBombBB: number | null = null;
   private runoutVote: { deadline: number; votes: Map<string, boolean | null>; timer: NodeJS.Timeout; boardBefore: number } | null = null;
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
@@ -156,6 +165,8 @@ export class GameRuntime {
       this.registered = init.snapshot.registered ?? [];
       this.bombRequestedBy = init.snapshot.bombRequestedBy ?? null;
       this.lastBombHand = init.snapshot.lastBombHand ?? null;
+      this.bombMult = init.snapshot.bombMult ?? 2;
+      this.bombSpin = init.snapshot.bombSpin ?? null;
     } else {
       this.table = new PokerTable({
         smallBlind: init.config.smallBlind, bigBlind: init.config.bigBlind, ante: init.config.ante, maxSeats: init.config.maxSeats,
@@ -444,7 +455,7 @@ export class GameRuntime {
     return this.config.mode === 'CASH' && this.config.allowStraddle !== false && this.status !== 'FINISHED';
   }
 
-  requestBomb(userId: string): void {
+  requestBomb(userId: string, roulette = false): void {
     if (!this.bombAllowed()) throw new GameError('NO_BOMB', 'Le straddle général est désactivé à cette table');
     if (this.table.seatOf(userId) === -1) throw new GameError('NOT_SEATED', 'Asseyez-vous pour lancer un straddle général');
     if (this.bombRequestedBy) throw new GameError('PENDING', 'Un straddle général est déjà prévu à la prochaine main');
@@ -452,15 +463,40 @@ export class GameRuntime {
     if (wait > 0) throw new GameError('COOLDOWN', `Prochain straddle général possible dans ${wait} main${wait > 1 ? 's' : ''}`);
     this.bombRequestedBy = userId;
     const bb = this.table.config.bigBlind;
-    this.log(`💣 ${this.meta.get(userId)?.username ?? '?'} lance un straddle général : tout le monde posera ${fmt(bb * 2)} à la prochaine main, flop direct`, 'system');
+    const name = this.meta.get(userId)?.username ?? '?';
+    if (roulette) {
+      // Tirage équitable (aléa cryptographique) entre 2 et 10 BB, dévoilé après la rotation
+      const value = 2 + secureRand(9);
+      this.bombMult = value;
+      this.bombSpin = { value, by: name, at: Date.now() };
+      this.log(`🎡 ${name} fait tourner la roulette du straddle…`, 'system');
+      setTimeout(() => {
+        if (this.disposed || this.bombSpin?.at === undefined || this.bombRequestedBy !== userId) return;
+        this.log(`🎡 La roulette s'arrête sur ${value} BB : tout le monde posera ${fmt(bb * value)} à la prochaine main, flop direct`, 'system');
+        this.changed();
+        this.maybeStartHand();
+      }, FAST ? 5 : GameRuntime.SPIN_MS);
+    } else {
+      this.bombMult = 2;
+      this.bombSpin = null;
+      this.log(`💣 ${name} lance un straddle général : tout le monde posera ${fmt(bb * 2)} à la prochaine main, flop direct`, 'system');
+    }
     this.changed();
   }
 
   cancelBomb(userId: string): void {
     if (this.bombRequestedBy !== userId) throw new GameError('NOT_YOURS', "Vous n'avez pas lancé de straddle général");
+    if (this.spinning()) throw new GameError('SPINNING', 'La roulette tourne encore');
     this.bombRequestedBy = null;
+    this.bombMult = 2;
+    this.bombSpin = null;
     this.log(`${this.meta.get(userId)?.username ?? '?'} annule le straddle général`, 'system');
     this.changed();
+  }
+
+  /** La roue est-elle encore en train de tourner ? */
+  private spinning(): boolean {
+    return !!this.bombSpin && !FAST && Date.now() < this.bombSpin.at + GameRuntime.SPIN_MS;
   }
 
   /** Payer la grosse blinde (et la petite manquée) pour jouer dès la prochaine main. */
@@ -1103,17 +1139,22 @@ export class GameRuntime {
     if (!this.staging.resultVisible) return;
     if (!this.table.canStartHand()) return;
     if (this.result) return; // résultat encore affiché : betweenHands relancera
+    if (this.bombRequestedBy && this.spinning()) return; // la roulette relancera la main
 
     const t = this.tournament;
     if (t) {
       const lvl = this.config.blindLevels[t.levelIndex]!;
       this.table.setBlinds(lvl.smallBlind, lvl.bigBlind, lvl.ante);
     }
-    const bombPot = this.bombRequestedBy && this.bombAllowed() ? this.table.config.bigBlind * 2 : 0;
+    const mult = this.bombMult;
+    const bombPot = this.bombRequestedBy && this.bombAllowed() ? this.table.config.bigBlind * mult : 0;
     const h = this.table.startHand(secureRand, undefined, { bombPot });
+    this.currentBombBB = bombPot ? mult : null;
     if (bombPot) {
       this.lastBombHand = h.handNumber;
       this.bombRequestedBy = null;
+      this.bombMult = 2;
+      this.bombSpin = null;
     }
     this.actionSeq += 1;
     this.staging = { visibleBoard: 0, resultVisible: true };
@@ -1124,7 +1165,7 @@ export class GameRuntime {
       m.lastAction = null;
     }
     this.log(bombPot
-      ? `Nouvelle main #${h.handNumber} — 💣 straddle général : ${fmt(bombPot)} chacun, flop direct`
+      ? `Nouvelle main #${h.handNumber} — 💣 straddle général ${mult} BB : ${fmt(bombPot)} chacun, flop direct`
       : `Nouvelle main #${h.handNumber} — blinds ${fmt(h.smallBlind)}/${fmt(h.bigBlind)}${h.ante ? `, ante ${fmt(h.ante)}` : ''}`, 'hand');
     if (h.finished) {
       // Tous à tapis dès les blinds : déroulé immédiat
@@ -1303,7 +1344,7 @@ export class GameRuntime {
     const snap: RuntimeSnapshot = {
       table: this.table.snapshot(), meta: [...this.meta.values()], tournament: this.tournament ? { ...this.tournament } : null,
       actionSeq: this.actionSeq, registered: this.registered,
-      bombRequestedBy: this.bombRequestedBy, lastBombHand: this.lastBombHand,
+      bombRequestedBy: this.bombRequestedBy, lastBombHand: this.lastBombHand, bombMult: this.bombMult, bombSpin: this.bombSpin,
     };
     if (snap.tournament?.levelEndsAt) snap.tournament.levelRemainingMs = Math.max(1000, snap.tournament.levelEndsAt - Date.now());
     if (snap.tournament?.breakEndsAt) snap.tournament.levelRemainingMs = Math.max(1000, snap.tournament.breakEndsAt - Date.now());
@@ -1426,7 +1467,8 @@ export class GameRuntime {
           available: this.bombAllowed() && mySeat >= 0 && !this.bombRequestedBy && this.bombInHands() === 0,
           inHands: this.bombInHands(),
           pendingBy: this.bombRequestedBy ? (this.meta.get(this.bombRequestedBy)?.username ?? '?') : null,
-          canCancel: this.bombRequestedBy === userId,
+          canCancel: this.bombRequestedBy === userId && !this.spinning(),
+          pendingBB: this.bombRequestedBy ? this.bombMult : null,
         },
       },
       tournament,
@@ -1435,6 +1477,8 @@ export class GameRuntime {
         ? (this.equityByBoard.get(this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard) ?? null)
         : this.runoutVote ? (this.runoutEquity() ?? null) : null,
       bombPot: !!h?.bombPot && !h.finished,
+      bombBB: h?.bombPot && !h.finished ? (this.currentBombBB ?? Math.round(h.bombPot / h.bigBlind)) : null,
+      bombSpin: this.bombSpin,
       suspense: h?.finished && !resultVisible ? (this.staging.suspense ?? null) : null,
       board2: h?.board2 ? (h.finished && !resultVisible ? (this.staging.visible2 != null ? h.board2.slice(0, this.staging.visible2) : null) : h.board2) : null,
       runout: this.runoutVote ? { deadline: this.runoutVote.deadline, votes: [...this.runoutVote.votes].map(([id, vote]) => ({ userId: id, vote })) } : null,

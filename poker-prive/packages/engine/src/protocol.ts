@@ -121,6 +121,10 @@ export interface GameView {
   suspense: 1 | 2 | null;
   /** La main en cours est un straddle général (tout le monde à 2 BB, pas d'enchères préflop). */
   bombPot: boolean;
+  /** Montant du straddle général de la main en cours, en BB (null sinon). */
+  bombBB: number | null;
+  /** Roulette du straddle : valeur tirée (2 à 10 BB), lanceur et début de la rotation (horloge serveur). */
+  bombSpin: { value: number; by: string; at: number } | null;
   /** Second board (run it twice), sinon null. */
   board2: Card[] | null;
   /** Vote « jouer le tapis deux fois » en cours. */
@@ -156,7 +160,7 @@ export interface GameView {
     runoutVote: boolean | null | undefined;
     canVoteRunout: boolean;
     /** Straddle général (bomb pot) : disponibilité et demande en attente. */
-    bomb: { available: boolean; inHands: number; pendingBy: string | null; canCancel: boolean };
+    bomb: { available: boolean; inHands: number; pendingBy: string | null; canCancel: boolean; pendingBB: number | null };
   };
   tournament: TournamentView | null;
   spectators: number;

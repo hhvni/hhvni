@@ -210,7 +210,7 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
     on('game:pause', GameIdSchema, async ({ gameId }) => (await joined(gameId)).pause(user.id));
     on('game:close', GameIdSchema, async ({ gameId }) => (await joined(gameId)).close(user.id));
     on('game:runout', GameIdSchema.extend({ accept: z.boolean() }), async ({ gameId, accept }) => (await joined(gameId)).voteRunout(user.id, accept));
-    on('game:bomb', GameIdSchema, async ({ gameId }) => (await joined(gameId)).requestBomb(user.id));
+    on('game:bomb', GameIdSchema.extend({ roulette: z.boolean().optional() }), async ({ gameId, roulette }) => (await joined(gameId)).requestBomb(user.id, !!roulette));
     on('game:cancelBomb', GameIdSchema, async ({ gameId }) => (await joined(gameId)).cancelBomb(user.id));
     on('game:postNow', GameIdSchema, async ({ gameId }) => (await joined(gameId)).postNow(user.id));
     on('game:showCards', GameIdSchema, async ({ gameId }) => (await joined(gameId)).showCards(user.id));

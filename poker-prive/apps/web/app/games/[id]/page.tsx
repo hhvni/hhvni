@@ -17,6 +17,7 @@ import { ActionBar } from '@/components/poker/ActionBar';
 import { ChatBox } from '@/components/poker/ChatBox';
 import { MiniCards } from '@/components/poker/PlayingCard';
 import { StreamAudio } from '@/components/poker/VideoTile';
+import { SPIN_MS, StraddleRoulette } from '@/components/poker/StraddleRoulette';
 import { HudStats, LastHandModal, NoteEditor, useHud, usePlayerNotes, type PlayerNote } from '@/components/poker/TableExtras';
 import { Avatar, Badge, Button, cx, Modal, PageLoader, Select, Tabs, Toggle, useToast } from '@/components/ui';
 
@@ -245,7 +246,7 @@ function Game({ gameId }: { gameId: string }) {
         {/* Zone de jeu */}
         <main className="relative flex min-w-0 flex-1 flex-col">
           {t && state.status !== 'WAITING' && <TournamentHud state={state} now={now} />}
-          <PrimaryActions state={state} run={run} isAdmin={isAdmin} mySeat={mySeat} />
+          <PrimaryActions state={state} run={run} isAdmin={isAdmin} mySeat={mySeat} now={now} />
           <div className="flex min-h-0 flex-1 items-center justify-center px-2 pt-7 sm:px-6 md:pt-2">
             <TableView
               state={state}
@@ -261,6 +262,8 @@ function Game({ gameId }: { gameId: string }) {
               notes={notes}
             />
           </div>
+
+          <StraddleRoulette spin={state.bombSpin} now={now} sound={prefs.sound} />
 
           <AnimatePresence>
             {state.mode === 'TOURNAMENT' && state.status === 'WAITING' && <TournamentLobby state={state} run={run} />}
@@ -336,7 +339,7 @@ function StatusBadge({ status }: { status: GameView['status'] }) {
 type Run = (event: string, payload?: Record<string, unknown>, success?: string) => Promise<boolean>;
 
 /** Boutons importants du moment, affichés discrètement en haut à droite de la table. */
-function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run: Run; isAdmin: boolean; mySeat: PublicSeat | null }) {
+function PrimaryActions({ state, run, isAdmin, mySeat, now }: { state: GameView; run: Run; isAdmin: boolean; mySeat: PublicSeat | null; now: () => number }) {
   const activePlayers = state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut).length;
   const items: React.ReactNode[] = [];
   if (isAdmin && state.status === 'WAITING' && state.mode === 'CASH') items.push(<Button key="start" size="sm" variant="gold" onClick={() => run('game:start', {}, 'Table ouverte')}>Démarrer la partie</Button>);
@@ -346,25 +349,38 @@ function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run:
   if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
   if (mySeat && state.mode === 'CASH' && state.config.allowStraddle !== false && state.status !== 'FINISHED') {
     const b = state.me.bomb;
+    const spinning = !!state.bombSpin && now() < state.bombSpin.at + SPIN_MS;
     if (b.pendingBy) {
       items.push(
         <div key="bomb" className="flex items-center gap-2 rounded-xl bg-danger/20 px-3 py-1.5 text-xs font-semibold text-[#ffb3ba] ring-1 ring-danger/50">
-          💣 Straddle général à la prochaine main ({b.pendingBy})
+          {spinning ? `🎡 La roulette tourne… (${b.pendingBy})` : `${state.bombSpin ? '🎡' : '💣'} Straddle général ${b.pendingBB ?? 2} BB à la prochaine main (${b.pendingBy})`}
           {b.canCancel && <button className="underline" onClick={() => run('game:cancelBomb', {})}>Annuler</button>}
         </div>,
       );
     } else {
+      const cls = 'flex items-center gap-2 rounded-xl bg-night-900/80 px-3 py-1.5 text-xs font-semibold text-ink ring-1 ring-danger/40 backdrop-blur transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-50';
+      const wait = b.inHands > 0 && <span className="text-[10px] font-normal text-muted">dans {b.inHands} main{b.inHands > 1 ? 's' : ''}</span>;
       items.push(
-        <button
-          key="bomb"
-          disabled={!b.available}
-          onClick={() => confirm('Lancer un straddle général ? À la prochaine main, tout le monde pose 2 BB et le flop sort directement.') && run('game:bomb', {})}
-          title="À la prochaine main, tout le monde pose 2 BB automatiquement et le flop sort directement (une fois toutes les 15 mains)"
-          className="flex items-center gap-2 rounded-xl bg-night-900/80 px-3 py-1.5 text-xs font-semibold text-ink ring-1 ring-danger/40 backdrop-blur transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          💣 Straddle général 2 BB
-          {b.inHands > 0 && <span className="text-[10px] font-normal text-muted">dans {b.inHands} main{b.inHands > 1 ? 's' : ''}</span>}
-        </button>,
+        <div key="bomb" className="flex flex-wrap justify-end gap-2">
+          <button
+            disabled={!b.available}
+            onClick={() => confirm('Lancer un straddle général ? À la prochaine main, tout le monde pose 2 BB et le flop sort directement.') && run('game:bomb', {})}
+            title="À la prochaine main, tout le monde pose 2 BB automatiquement et le flop sort directement (une fois toutes les 15 mains)"
+            className={cls}
+          >
+            💣 Straddle 2 BB
+            {wait}
+          </button>
+          <button
+            disabled={!b.available}
+            onClick={() => confirm('Faire tourner la roulette ? Elle tire un straddle général entre 2 et 10 BB que tout le monde posera à la prochaine main.') && run('game:bomb', { roulette: true })}
+            title="La roue tire un montant entre 2 et 10 BB : à la prochaine main, tout le monde le pose automatiquement et le flop sort directement (une fois toutes les 15 mains, partagé avec le straddle 2 BB)"
+            className={cls}
+          >
+            🎡 Roulette 2–10 BB
+            {wait}
+          </button>
+        </div>,
       );
     }
   }

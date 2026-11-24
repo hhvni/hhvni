@@ -302,6 +302,14 @@ export const sounds = {
       tone(i * 0.85 + 0.2, 58, 0.18, 0.22, 'sine', 42);
     }
   },
+  /** Cliquet de la roulette du straddle. */
+  wheelTick: () => play('chip', { gain: 0.35, rate: 1.4 }),
+  /** Arrêt de la roulette. */
+  wheelStop: () => {
+    play('stack', { gain: 0.6 });
+    tone(0.05, 784, 0.3, 0.06, 'triangle');
+    tone(0.17, 1175, 0.45, 0.05, 'triangle');
+  },
   /** Retournement lent de la river. */
   reveal: () => {
     play('flip', { gain: 0.8, rate: 0.85 });
