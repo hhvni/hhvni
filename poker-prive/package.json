@@ -20,9 +20,16 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
+    "deepmerge-ts": "8.0.2",
+    "effect": "3.22.5",
     "typescript": "5.8.3"
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "postcss": "8.5.33",
+    "effect": "3.22.5",
+    "deepmerge-ts": "8.0.2"
   }
 }
