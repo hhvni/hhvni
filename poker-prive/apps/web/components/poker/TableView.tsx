@@ -62,13 +62,15 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
 
   const myHand = useMemo(() => {
     const cards = state.me.cards;
+    const mine = state.me.seat >= 0 ? state.seats[state.me.seat] : null;
+    if (!mine || mine.folded) return null;
     if (cards.length !== 2 || state.board.length < 3 || !cards.every(isCard)) return null;
     try {
       return evaluateBest([...cards, ...state.board] as Card[]).description;
     } catch {
       return null;
     }
-  }, [state.me.cards, state.board]);
+  }, [state.me.cards, state.board, state.me.seat, state.seats]);
 
   const seatsList = state.seats.map((s, i) => ({ s, i }));
   const rx = narrow ? 39 : 46.5;
@@ -281,6 +283,8 @@ function Seat({
   const shownCards = seat.cards;
   const cardSize = isMe ? (narrow ? 'sm' : 'md') : narrow ? 'xs' : 'sm';
   const result = state.result?.shown.find((x) => x.userId === seat.userId);
+  const eq = state.equity?.find((e) => e.userId === seat.userId);
+  const eqLeader = !!eq && !!state.equity && eq.win > 0 && eq.win >= Math.max(...state.equity.map((e) => e.win));
 
   return (
     <div className={cx('relative flex flex-col items-center', seat.folded && !winner && 'opacity-55')}>
@@ -346,7 +350,18 @@ function Seat({
       {/* Dernière action / statut */}
       <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
         <AnimatePresence mode="wait">
-          {result ? (
+          {eq ? (
+            <motion.span
+              key={`eq-${state.board.length}`}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cx('flex items-baseline gap-1 rounded-full px-2.5 py-0.5 text-xs font-extrabold tabular shadow-lg ring-1', eqLeader ? 'bg-gold-400 text-night-950 ring-gold-200' : 'bg-black/80 text-white ring-white/20')}
+              title="Probabilité de gagner le coup"
+            >
+              {pctLabel(eq.win)}
+              {eq.tie >= 0.005 && <span className="text-[9px] font-semibold opacity-80">+{pctLabel(eq.tie)} égalité</span>}
+            </motion.span>
+          ) : result ? (
             <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-gold-300">{result.description}</motion.span>
           ) : seat.pendingRebuy ? (
             <Badge tone="gold">Rebuy ?</Badge>
@@ -364,4 +379,10 @@ function Seat({
       </div>
     </div>
   );
+}
+
+/** 0,62 → « 62 % » ; arrondi au dixième sous 10 % (ex. « 4,5 % »). */
+function pctLabel(p: number): string {
+  const v = p * 100;
+  return `${v.toLocaleString('fr-FR', { maximumFractionDigits: v > 0 && v < 10 ? 1 : 0 })} %`;
 }

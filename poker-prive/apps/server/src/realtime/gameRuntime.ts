@@ -8,7 +8,7 @@
  */
 import { randomInt } from 'node:crypto';
 import {
-  computeHandStats, PokerError, PokerTable, prizePool, totalPot,
+  allInEquity, computeHandStats, PokerError, PokerTable, prizePool, totalPot,
   type ActionType, type GameConfig, type GameStatus, type GameView, type HandEvent,
   type HandResultView, type LogLine, type PublicSeat, type TableSnapshot, type TournamentView, type TurnInfo,
 } from '@poker/engine';
@@ -109,6 +109,8 @@ export class GameRuntime {
   spectatorCount = 0;
 
   private staging: Staging = { visibleBoard: 0, resultVisible: true };
+  /** Probabilités de gain par longueur de board pendant un tapis. */
+  private equityByBoard = new Map<number, { userId: string; win: number; tie: number }[]>();
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
   private stagingTimer: NodeJS.Timeout | null = null;
@@ -755,8 +757,18 @@ export class GameRuntime {
       this.changed();
       this.scheduleNextHand(showdown ? 5000 : 3000);
     };
+    this.equityByBoard.clear();
     if (stageCount > 0) {
       this.staging = { visibleBoard: boardBefore, resultVisible: false };
+      // Probabilités de gain à chaque étape du déroulé (mains dévoilées uniquement)
+      const live = h.players.filter((p) => !p.folded && p.shown);
+      if (live.length >= 2) {
+        for (let len = boardBefore; len <= 5; len++) {
+          if (len !== boardBefore && len !== 3 && len !== 4 && len !== 5) continue;
+          const eq = allInEquity(live.map((p) => p.hole), h.board.slice(0, len));
+          this.equityByBoard.set(len, live.map((p, i) => ({ userId: p.playerId, win: eq[i]!.win, tie: eq[i]!.tie })));
+        }
+      }
       const streetSizes = h.events.filter((e) => e.type === 'street').slice(-stageCount).map((e) => (e.type === 'street' ? e.cards.length : 0));
       let i = 0;
       const tick = () => {
@@ -804,6 +816,7 @@ export class GameRuntime {
     this.nextHandTimer = null;
     if (this.stagingTimer && !this.staging.resultVisible) return; // attendre la fin du déroulé
     this.result = null;
+    this.equityByBoard.clear();
     this.staging = { visibleBoard: 5, resultVisible: true };
     for (const m of this.meta.values()) m.lastAction = null;
 
@@ -1151,12 +1164,14 @@ export class GameRuntime {
       me: {
         userId, seat: mySeat, cards: myHp ? [...myHp.hole] : [],
         legal: this.table.currentPlayerId() === userId && !m?.away ? this.table.legalActions(userId) : null,
-        isRoomAdmin: this.isRoomAdmin(userId), canReload: this.reloadAmountFor(userId) > 0, reloadAmount: this.reloadAmountFor(userId),
+        // Pendant le déroulé d'un tapis, rien ne doit trahir le résultat
+        isRoomAdmin: this.isRoomAdmin(userId), canReload: resultVisible && this.reloadAmountFor(userId) > 0, reloadAmount: this.reloadAmountFor(userId),
         canRebuy: this.canRebuy(userId), canAddon: this.canAddon(userId), leavingAfterHand: !!m?.leaveAfterHand,
         bankroll: this.bankrolls.get(userId) ?? 0, registered: this.registered.includes(userId),
       },
       tournament,
       spectators: this.spectatorCount,
+      equity: h?.finished && !resultVisible ? (this.equityByBoard.get(this.staging.visibleBoard) ?? null) : null,
     };
   }
 

@@ -128,6 +128,8 @@ export interface GameView {
   };
   tournament: TournamentView | null;
   spectators: number;
+  /** Probabilités de gain pendant le déroulé d'un tapis (cartes dévoilées). */
+  equity: { userId: string; win: number; tie: number }[] | null;
 }
 
 export interface LogLine {

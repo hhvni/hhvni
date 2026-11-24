@@ -199,3 +199,93 @@ export function evaluateBest(cards: Card[]): EvaluatedHand {
 export function compareHands(a: Card[], b: Card[]): number {
   return Math.sign(evaluateBest(a).score - evaluateBest(b).score);
 }
+
+// ─────────────────────────── Évaluation rapide ───────────────────────────
+
+const RANK_OF: Record<string, number> = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, T: 10, J: 11, Q: 12, K: 13, A: 14 };
+const SUIT_OF: Record<string, number> = { c: 0, d: 1, h: 2, s: 3 };
+
+const enc = (cat: number, r: number[]) => (((((cat * 16 + (r[0] ?? 0)) * 16 + (r[1] ?? 0)) * 16 + (r[2] ?? 0)) * 16 + (r[3] ?? 0)) * 16 + (r[4] ?? 0));
+
+/** Hauteur de la meilleure quinte dans un masque de rangs (bit r = rang r), 0 si aucune. */
+function straightHigh(mask: number): number {
+  if (mask & (1 << 14)) mask |= 1 << 1; // As bas
+  for (let hi = 14; hi >= 5; hi--) {
+    const need = 0b11111 << (hi - 4);
+    if ((mask & need) === need) return hi;
+  }
+  return 0;
+}
+
+const straightRanksOf = (hi: number) => (hi === 5 ? [5, 4, 3, 2, 1] : [hi, hi - 1, hi - 2, hi - 3, hi - 4]);
+
+/**
+ * Score de la meilleure main de 5 parmi 5 à 7 cartes, identique à
+ * `evaluateBest(cards).score` mais sans énumérer les combinaisons (≈ 20× plus rapide).
+ * Utilisé pour les calculs intensifs (probabilités, robots).
+ */
+export function fastScore(cards: readonly Card[]): number {
+  const counts = new Array<number>(15).fill(0);
+  const suitMask = [0, 0, 0, 0];
+  const suitCount = [0, 0, 0, 0];
+  let mask = 0;
+  for (const c of cards) {
+    const r = RANK_OF[c[0]!]!;
+    const s = SUIT_OF[c[1]!]!;
+    counts[r]!++;
+    suitMask[s]! |= 1 << r;
+    suitCount[s]!++;
+    mask |= 1 << r;
+  }
+  // Couleur / quinte flush
+  const fs = suitCount.findIndex((n) => n >= 5);
+  if (fs !== -1) {
+    const sh = straightHigh(suitMask[fs]!);
+    if (sh) return enc(sh === 14 ? HandCategory.RoyalFlush : HandCategory.StraightFlush, straightRanksOf(sh));
+  }
+  const quads: number[] = [];
+  const trips: number[] = [];
+  const pairs: number[] = [];
+  const singles: number[] = [];
+  for (let r = 14; r >= 2; r--) {
+    const n = counts[r]!;
+    if (n === 4) quads.push(r);
+    else if (n === 3) trips.push(r);
+    else if (n === 2) pairs.push(r);
+    else if (n === 1) singles.push(r);
+  }
+  const highestExcept = (...ex: number[]) => {
+    for (let r = 14; r >= 2; r--) if (counts[r]! > 0 && !ex.includes(r)) return r;
+    return 0;
+  };
+  if (quads.length) {
+    const q = quads[0]!;
+    return enc(HandCategory.FourOfAKind, [q, q, q, q, highestExcept(q)]);
+  }
+  if (trips.length && (trips.length > 1 || pairs.length)) {
+    const t = trips[0]!;
+    const p = Math.max(trips[1] ?? 0, pairs[0] ?? 0);
+    return enc(HandCategory.FullHouse, [t, t, t, p, p]);
+  }
+  if (fs !== -1) {
+    const r: number[] = [];
+    for (let x = 14; x >= 2 && r.length < 5; x--) if (suitMask[fs]! & (1 << x)) r.push(x);
+    return enc(HandCategory.Flush, r);
+  }
+  const sh = straightHigh(mask);
+  if (sh) return enc(HandCategory.Straight, straightRanksOf(sh));
+  if (trips.length) {
+    const t = trips[0]!;
+    const k = singles.slice(0, 2);
+    return enc(HandCategory.ThreeOfAKind, [t, t, t, ...k]);
+  }
+  if (pairs.length >= 2) {
+    const [p1, p2] = pairs as [number, number];
+    return enc(HandCategory.TwoPair, [p1, p1, p2, p2, highestExcept(p1, p2)]);
+  }
+  if (pairs.length === 1) {
+    const p = pairs[0]!;
+    return enc(HandCategory.OnePair, [p, p, ...singles.slice(0, 3)]);
+  }
+  return enc(HandCategory.HighCard, singles.slice(0, 5));
+}

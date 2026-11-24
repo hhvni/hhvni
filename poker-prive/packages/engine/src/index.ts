@@ -5,3 +5,4 @@ export * from './table.js';
 export * from './stats.js';
 export * from './tournament.js';
 export * from './protocol.js';
+export * from './equity.js';

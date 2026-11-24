@@ -273,7 +273,7 @@ function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run:
   if (state.me.canAddon) items.push(<Button key="addon" size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>);
   if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
   if (state.me.leavingAfterHand) items.push(<Badge key="leaving">Départ après la main</Badge>);
-  if (state.status === 'RUNNING' && activePlayers < 2) items.push(<span key="wait" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>);
+  if (state.status === 'RUNNING' && activePlayers < 2 && !state.equity && !state.turn) items.push(<span key="wait" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>);
   if (state.status === 'WAITING' && state.mode === 'CASH' && !isAdmin) items.push(<span key="w2" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">L&apos;administrateur va démarrer la partie.</span>);
   if (items.length === 0) return null;
   return <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-2 sm:right-4 sm:top-4">{items}</div>;

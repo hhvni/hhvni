@@ -20,7 +20,7 @@
  * Le robot n'utilise QUE les informations qu'un joueur réel possède.
  */
 import { randomInt } from 'node:crypto';
-import { evaluateBest, freshDeck, rankValue, suitOf, type Card, type HandState, type LegalActions } from '@poker/engine';
+import { fastScore, freshDeck, rankValue, suitOf, type Card, type HandState, type LegalActions } from '@poker/engine';
 
 // ─────────────────────────── Classement préflop ───────────────────────────
 
@@ -156,16 +156,16 @@ export function equity(hole: Card[], board: Card[], opponents: number[], iterati
     }
     const full = [...board];
     while (full.length < 5) full.push(take());
-    const mine = evaluateBest([...hole, ...full]).score;
+    const mine = fastScore([...hole, ...full]);
     let best = 0;
     let ties = 0;
     for (const o of opp) {
-      const s = evaluateBest([...o, ...full]).score;
+      const s = fastScore([...o, ...full]);
       if (s > best) best = s;
     }
     if (mine > best) total += 1;
     else if (mine === best) {
-      for (const o of opp) if (evaluateBest([...o, ...full]).score === mine) ties++;
+      for (const o of opp) if (fastScore([...o, ...full]) === mine) ties++;
       total += 1 / (ties + 1);
     }
   }
