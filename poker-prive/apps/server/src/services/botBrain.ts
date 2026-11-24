@@ -198,9 +198,60 @@ export interface BotDecision {
   thinkMs: number;
 }
 
-const chance = (pct: number) => randomInt(1000) < pct * 10;
+const chance = (pct: number) => randomInt(1000) < Math.min(950, pct * 10);
 
-export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
+// ─────────────────────────── Caractères ───────────────────────────
+
+export type BotStyle = 'requin' | 'roc' | 'fou' | 'pigeon';
+
+interface StyleParams {
+  label: string;
+  emoji: string;
+  description: string;
+  /** Multiplicateur de la range d'ouverture. */
+  open: number;
+  /** Probabilité de « limper » (suivre la BB) avec une main trop faible pour ouvrir. */
+  limp: number;
+  /** Multiplicateur des ranges de relance (3-bet, 4-bet). */
+  threeBet: number;
+  /** Multiplicateur des ranges de suivi face à une relance. */
+  defend: number;
+  /** Décalage des seuils d'équité pour miser/relancer de valeur (négatif = plus léger). */
+  value: number;
+  /** Multiplicateur des fréquences de bluff / semi-bluff / c-bet léger. */
+  bluff: number;
+  /** Multiplicateur des fréquences de relance. */
+  raise: number;
+  /** Marge ajoutée aux cotes du pot pour suivre (négatif = suit trop). */
+  callMargin: number;
+  /** Multiplicateur du temps de réflexion. */
+  speed: number;
+}
+
+export const BOT_STYLES: Record<BotStyle, StyleParams> = {
+  requin: { label: 'Requin', emoji: '🦈', description: 'Joueur solide et équilibré, style régulier', open: 1, limp: 0, threeBet: 1, defend: 1, value: 0, bluff: 1, raise: 1, callMargin: 0, speed: 1 },
+  roc: { label: 'Roc', emoji: '🪨', description: 'Très serré : ne joue que les grosses mains, bluffe rarement', open: 0.55, limp: 0, threeBet: 0.5, defend: 0.55, value: 0.06, bluff: 0.2, raise: 0.6, callMargin: 0.06, speed: 1.2 },
+  fou: { label: 'Fou', emoji: '🤪', description: 'Ultra-agressif : relance tout, bluffe beaucoup', open: 1.9, limp: 0, threeBet: 2.6, defend: 1.4, value: -0.08, bluff: 2.8, raise: 1.7, callMargin: -0.02, speed: 0.7 },
+  pigeon: { label: 'Pigeon', emoji: '🐦', description: 'Suit beaucoup trop, relance peu : il paie vos grosses mains', open: 0.7, limp: 0.65, threeBet: 0.4, defend: 2.6, value: 0.05, bluff: 0.15, raise: 0.4, callMargin: -0.14, speed: 0.9 },
+};
+
+const STYLE_CYCLE: BotStyle[] = ['requin', 'roc', 'fou', 'pigeon'];
+
+/** Caractère d'un robot, stable et déduit de son nom (« Robot Ada », « Robot Bruno 2 »…). */
+export function botStyleOf(username: string, names: readonly string[]): BotStyle {
+  const m = /^Robot (\S+)(?: (\d+))?$/.exec(username);
+  const idx = m ? names.indexOf(m[1]!) : -1;
+  if (idx === -1) {
+    let h = 0;
+    for (const ch of username) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return STYLE_CYCLE[h % STYLE_CYCLE.length]!;
+  }
+  const round = m?.[2] ? Number(m[2]) - 1 : 0;
+  return STYLE_CYCLE[(idx + round) % STYLE_CYCLE.length]!;
+}
+
+export function decide(h: HandState, me: string, l: LegalActions, style: BotStyle = 'requin'): BotDecision {
+  const S = BOT_STYLES[style];
   const p = h.players.find((x) => x.playerId === me)!;
   const bb = h.bigBlind;
   const read = readHand(h, me);
@@ -231,7 +282,7 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
   // Temps de réflexion : plus long sur les grosses décisions
   const big = l.callAmount > l.pot * 0.5 || d.type === 'raise' || (d.amount ?? 0) >= l.maxTo;
   const base = d.type === 'check' ? 900 : d.type === 'fold' && l.callAmount <= bb ? 1100 : 1700;
-  d.thinkMs = base + randomInt(1600) + (big ? 1500 + randomInt(2000) : 0) + (h.street === 'river' ? 600 : 0);
+  d.thinkMs = Math.round((base + randomInt(1600) + (big ? 1500 + randomInt(2000) : 0) + (h.street === 'river' ? 600 : 0)) * S.speed);
   return d;
 
   function preflop(): BotDecision {
@@ -241,17 +292,17 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
     const headsUp = nPlayers === 2;
     // Moins de joueurs = ranges plus larges
     const widen = headsUp ? 1.8 : nPlayers <= 4 ? 1.3 : nPlayers <= 6 ? 1.1 : 1;
-    const openPct = Math.min(0.85, OPEN[pos] * widen);
+    const openPct = Math.min(0.9, OPEN[pos] * widen * S.open);
 
     // Tapis court : tapis ou se coucher
     if (stackBB <= 12) {
       if (read.preflopRaises === 0) {
-        const push = Math.min(0.75, openPct * 1.5 * (12 / Math.max(3, stackBB)) * 0.6);
+        const push = Math.min(0.8, openPct * 1.5 * (12 / Math.max(3, stackBB)) * 0.6);
         if (pct <= push) return { type: l.canBet ? 'bet' : 'raise', amount: l.maxTo, thinkMs: 0 };
         return passive();
       }
       const price = l.callAmount / Math.max(1, l.pot + l.callAmount);
-      const callWidth = price < 0.3 ? 0.25 : 0.12;
+      const callWidth = Math.min(0.6, (price < 0.3 ? 0.25 : 0.12) * Math.sqrt(S.defend));
       if (pct <= 0.05) return { type: 'raise', amount: l.maxTo, thinkMs: 0 };
       return pct <= callWidth ? call() : passive();
     }
@@ -259,7 +310,7 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
     if (read.preflopRaises === 0) {
       // Personne n'a relancé : ouverture (iso-relance s'il y a des limpers)
       if (pos === 'BB' && l.canCheck) {
-        return pct <= 0.12 ? aggro(bb * (3 + read.limpers)) : call();
+        return pct <= 0.12 * S.raise ? aggro(bb * (3 + read.limpers)) : call();
       }
       const width = read.limpers > 0 ? openPct * 0.7 : openPct;
       if (pct <= width) {
@@ -268,6 +319,8 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
       }
       // Limp derrière avec petites paires / connecteurs assortis en position, à bas prix
       if (read.limpers > 0 && pct <= width * 1.5 && LATE.has(pos)) return call();
+      // Le pigeon « limpe » volontiers pour voir un flop pas cher
+      if (S.limp > 0 && pct <= Math.min(0.9, width * 2.6) && l.callAmount <= bb && chance(S.limp * 100)) return call();
       return passive();
     }
 
@@ -280,13 +333,16 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
       const vsLate = LATE.has(raiserPos);
       let threeBet = vsLate ? 0.1 : raiserPos === 'UTG' ? 0.04 : 0.065;
       if (pos === 'BB' && raiserPos === 'SB') threeBet = 0.14;
-      let callW = threeBet + (inPosition ? (vsLate ? 0.14 : 0.08) : 0.04);
-      if (pos === 'BB') callW = threeBet + (l.callAmount <= 2.5 * bb ? (vsLate ? 0.3 : 0.18) : 0.1);
+      let callExtra = inPosition ? (vsLate ? 0.14 : 0.08) : 0.04;
+      if (pos === 'BB') callExtra = l.callAmount <= 2.5 * bb ? (vsLate ? 0.3 : 0.18) : 0.1;
+      threeBet *= S.threeBet;
+      callExtra *= S.defend;
       if (headsUp) {
         threeBet *= 1.6;
-        callW *= 1.6;
+        callExtra *= 1.6;
       }
-      if (pct <= threeBet || (pct <= threeBet * 1.6 && chance(12))) {
+      const callW = Math.min(0.85, threeBet + callExtra);
+      if (pct <= threeBet || (pct <= threeBet * 1.6 && chance(12 * S.bluff))) {
         return aggro(l.currentBet * (inPosition ? 3 : 4));
       }
       return pct <= callW ? call() : passive();
@@ -294,14 +350,14 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
 
     if (read.preflopRaises === 2) {
       // Face à un 3-bet
-      if (pct <= 0.025) return aggro(l.currentBet * 2.3);
-      if (pct <= 0.06 && stackBB > 40) return call();
-      if (pct <= 0.04) return call();
+      if (pct <= 0.025 * S.threeBet) return aggro(l.currentBet * 2.3);
+      if (pct <= 0.06 * S.defend && stackBB > 40) return call();
+      if (pct <= 0.04 * S.defend) return call();
       return passive();
     }
     // Face à un 4-bet ou plus : seulement le haut du haut
-    if (pct <= 0.012) return { type: 'raise', amount: l.maxTo, thinkMs: 0 };
-    if (pct <= 0.02) return call();
+    if (pct <= 0.012 * S.threeBet) return { type: 'raise', amount: l.maxTo, thinkMs: 0 };
+    if (pct <= 0.02 * S.defend) return call();
     return passive();
   }
 
@@ -317,11 +373,12 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
 
     if (l.canCheck) {
       // Personne n'a misé
-      if (eq > 0.68) return aggro(l.pot * (river ? 0.75 : 0.6));
-      if (eq > 0.55 && chance(65)) return aggro(l.pot * 0.5);
-      if (isAggressor && h.street === 'flop' && multiway === 1 && chance(eq > 0.35 ? 70 : 45)) return aggro(l.pot * 0.33);
-      if (draw && !river && multiway <= 2 && chance(40)) return aggro(l.pot * 0.55);
-      if (river && multiway === 1 && eq < 0.15 && chance(12)) return aggro(l.pot * 0.6);
+      if (eq > 0.68 + S.value) return aggro(l.pot * (river ? 0.75 : 0.6));
+      if (eq > 0.55 + S.value && chance(65 * S.raise)) return aggro(l.pot * 0.5);
+      if (isAggressor && h.street === 'flop' && multiway === 1 && chance(eq > 0.35 ? 70 * Math.sqrt(S.bluff) : 45 * S.bluff)) return aggro(l.pot * 0.33);
+      if (draw && !river && multiway <= 2 && chance(40 * S.bluff)) return aggro(l.pot * 0.55);
+      if (river && multiway === 1 && eq < 0.15 && chance(12 * S.bluff)) return aggro(l.pot * 0.6);
+      if (S.bluff > 2 && !river && multiway <= 2 && chance(18)) return aggro(l.pot * 0.5);
       return passive();
     }
 
@@ -331,11 +388,11 @@ export function decide(h: HandState, me: string, l: LegalActions): BotDecision {
     if (read.streetRaises >= 2) {
       // Guerre de relances : seulement les monstres continuent
       if (eq > 0.85) return committed || facing > p.stack * 0.5 ? { type: 'raise', amount: l.maxTo, thinkMs: 0 } : call();
-      return eq > potOdds + 0.12 ? call() : passive();
+      return eq > potOdds + 0.12 + S.callMargin ? call() : passive();
     }
-    if (eq > 0.82 && canAggro && chance(70)) return aggro(l.currentBet * 3 + (l.pot - l.currentBet) * 0.2);
-    if (draw && !river && multiway === 1 && eq > 0.3 && canAggro && chance(10)) return aggro(l.currentBet * 3);
-    const margin = multiway >= 2 ? 0.06 : 0.03;
+    if (eq > 0.82 + S.value / 2 && canAggro && chance(70 * S.raise)) return aggro(l.currentBet * 3 + (l.pot - l.currentBet) * 0.2);
+    if (draw && !river && multiway === 1 && eq > 0.3 && canAggro && chance(10 * S.bluff)) return aggro(l.currentBet * 3);
+    const margin = (multiway >= 2 ? 0.06 : 0.03) + S.callMargin;
     if (eq >= potOdds + margin) return call();
     if (committed && eq > potOdds) return call();
     return passive();

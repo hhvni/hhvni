@@ -5,7 +5,8 @@
  */
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { evaluateBest, isCard, type Card, type GameView, type PublicSeat } from '@poker/engine';
+import { evaluateBest, type Card, type GameView, type PublicSeat } from '@poker/engine';
+import { describeHand, type HandHint } from '@/lib/handHint';
 import { setDisplayPrefs, useDisplayPrefs, useMoney } from '@/lib/displayPrefs';
 import type { Reaction } from '@/lib/useGame';
 import type { VideoChat } from '@/lib/useVideoChat';
@@ -53,6 +54,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
   const rotation = mySeat >= 0 ? mySeat : 0;
   const displayIndex = (seat: number) => (seat - rotation + n) % n;
 
+  const money = useMoney();
   const winners = useMemo(() => new Set(state.result?.pots.flatMap((p) => p.winners) ?? []), [state.result]);
   // Déroulé d'un tapis en cours (cartes retournées, résultat pas encore affiché)
   const runoutView = !state.result && (!!state.equity || !!state.suspense);
@@ -86,23 +88,46 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
     prevBets.current = { hand: state.handNumber, bets: now };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.seats, state.handNumber]);
-  const bestCards = useMemo(() => {
-    if (!state.result || state.board2) return new Set<string>();
-    const ids = new Set(state.result.pots.flatMap((p) => p.winners));
-    return new Set(state.result.shown.filter((s) => ids.has(s.userId)).flatMap((s) => s.best));
-  }, [state.result]);
+  /** Cartes gagnantes au showdown : sur chaque board et dans les mains des vainqueurs. */
+  const showdown = useMemo(() => {
+    const out = { b1: new Set<string>(), b2: new Set<string>(), hole: new Set<string>() };
+    const r = state.result;
+    if (!r) return out;
+    const shown = new Map(r.shown.map((x) => [x.userId, x.cards]));
+    const mark = (run: 1 | 2, board: Card[], target: Set<string>) => {
+      if (board.length < 5) return;
+      for (const pot of r.pots) {
+        if ((pot.run ?? 1) !== run) continue;
+        for (const w of pot.winners) {
+          const cards = shown.get(w);
+          if (!cards || cards.length !== 2) continue;
+          try {
+            for (const c of evaluateBest([...cards, ...board]).cards) (cards.includes(c) ? out.hole : target).add(c);
+          } catch {
+            /* main incomplète */
+          }
+        }
+      }
+    };
+    mark(1, state.board, out.b1);
+    if (state.board2) mark(2, state.board2, out.b2);
+    return out;
+  }, [state.result, state.board, state.board2]);
+  const hasShowdown = showdown.b1.size + showdown.b2.size > 0;
 
-  const myHand = useMemo(() => {
-    const cards = state.me.cards;
-    const mine = state.me.seat >= 0 ? state.seats[state.me.seat] : null;
-    if (!mine || mine.folded) return null;
-    if (cards.length !== 2 || state.board.length < 3 || !cards.every(isCard)) return null;
-    try {
-      return evaluateBest([...cards, ...state.board] as Card[]).description;
-    } catch {
-      return null;
+  /** Bandeau du vainqueur : pots regroupés par gagnant(s) et par main. */
+  const winLines = useMemo(() => {
+    const r = state.result;
+    if (!r) return [];
+    const map = new Map<string, { run?: 1 | 2; winners: string[]; description: string | null; amount: number }>();
+    for (const pot of r.pots) {
+      const k = `${pot.run ?? 0}|${pot.winners.join(',')}|${pot.description ?? ''}`;
+      const cur = map.get(k);
+      if (cur) cur.amount += pot.amount;
+      else map.set(k, { run: pot.run, winners: pot.winners, description: pot.description, amount: pot.amount });
     }
-  }, [state.me.cards, state.board, state.me.seat, state.seats]);
+    return [...map.values()].slice(0, 4);
+  }, [state.result]);
 
   const seatsList = state.seats.map((s, i) => ({ s, i }));
   const rx = narrow ? 39 : 46.5;
@@ -144,7 +169,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
                   {!c && i === 4 && state.suspense === 1 && <SuspenseCard size={narrow ? 'sm' : 'md'} />}
                   {c && (
                     <motion.div key={`${state.handNumber}-${c}`} className="absolute inset-0" {...cardAnim(i, runoutView)}>
-                      <PlayingCard card={c} size={narrow ? 'sm' : 'md'} highlight={bestCards.has(c)} dim={!!state.result && bestCards.size > 0 && !bestCards.has(c)} />
+                      <PlayingCard card={c} size={narrow ? 'sm' : 'md'} highlight={showdown.b1.has(c)} dim={hasShowdown && !showdown.b1.has(c)} className={cx('transition-[translate] duration-300', showdown.b1.has(c) && '-translate-y-2')} />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -164,7 +189,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
                     {!c && i === 4 && state.suspense === 2 && <SuspenseCard size={narrow ? 'xs' : 'sm'} />}
                     {c && (
                       <motion.div key={`b2-${state.handNumber}-${c}`} className="absolute inset-0" {...cardAnim(i, runoutView)}>
-                        <PlayingCard card={c} size={narrow ? 'xs' : 'sm'} />
+                        <PlayingCard card={c} size={narrow ? 'xs' : 'sm'} highlight={showdown.b2.has(c)} dim={hasShowdown && !showdown.b2.has(c)} className={cx('transition-[translate] duration-300', showdown.b2.has(c) && '-translate-y-1.5')} />
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -174,19 +199,33 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
           </div>
         )}
         <AnimatePresence>
-          {state.result && state.result.pots[0] && (
-            <motion.div initial={{ opacity: 0, y: 8, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }} className="rounded-2xl bg-black/55 px-4 py-1.5 text-center text-xs font-semibold text-gold-300 ring-1 ring-gold-400/40 backdrop-blur sm:text-sm">
-              {(state.result.pots.some((p) => p.run) ? state.result.pots.filter((p, i, a) => a.findIndex((x) => x.run === p.run) === i) : [state.result.pots[0]]).map((pot, i) => (
-                <div key={i}>
-                  {pot.run && <span className="mr-1 text-[10px] uppercase text-white/60">{pot.run === 1 ? '1ᵉʳ board' : '2ᵉ board'}</span>}
-                  {pot.winners.map((id) => state.seats.find((s) => s?.userId === id)?.username ?? '?').join(' & ')}
-                  {pot.description ? ` · ${pot.description}` : ' remporte le pot'}
+          {state.result && winLines.length > 0 && (
+            <motion.div
+              key={`res-${state.result.handNumber}`}
+              initial={{ opacity: 0, y: 10, scale: 0.85 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'spring', damping: 15, stiffness: 200, delay: 0.15 }}
+              className="flex flex-col items-center gap-1 rounded-2xl bg-black/65 px-4 py-2 text-center shadow-[0_8px_30px_rgba(0,0,0,0.5)] ring-1 ring-gold-400/50 backdrop-blur"
+            >
+              {winLines.map((w, i) => (
+                <div key={i} className={cx('flex flex-col items-center leading-tight', i > 0 && 'border-t border-white/10 pt-1')}>
+                  <div className={cx('text-white', i === 0 ? 'text-xs sm:text-sm' : 'text-[11px]')}>
+                    {w.run && <span className="mr-1 rounded bg-white/10 px-1 text-[9px] font-bold uppercase text-white/70">{w.run === 1 ? '1ᵉʳ board' : '2ᵉ board'}</span>}
+                    <span className="font-bold">{w.winners.map((id) => state.seats.find((s) => s?.userId === id)?.username ?? '?').join(' & ')}</span>
+                    <span className="text-white/70">{w.winners.length > 1 ? ' partagent ' : ' gagne '}</span>
+                    <span className="font-bold tabular text-gold-300">{money(w.amount)}</span>
+                  </div>
+                  {w.description && (
+                    <div className={cx('font-display font-bold text-gold-300 drop-shadow-[0_0_10px_rgba(236,201,119,0.45)]', i === 0 ? 'text-base sm:text-xl' : 'text-xs sm:text-sm')}>
+                      {w.description}
+                    </div>
+                  )}
                 </div>
               ))}
             </motion.div>
           )}
         </AnimatePresence>
-        {!state.result && myHand && state.config.uiLevel !== 'expert' && <div className="rounded-full bg-black/35 px-3 py-0.5 text-[11px] text-white/80">Votre main : <span className="font-semibold text-gold-300">{myHand}</span></div>}
       </div>
 
       {/* Mises devant les joueurs */}
@@ -267,7 +306,8 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
                 isMe={s.userId === state.me.userId}
                 narrow={narrow}
                 winner={winners.has(s.userId)}
-                bestCards={bestCards}
+                bestHole={showdown.hole}
+                hasShowdown={hasShowdown}
                 video={video}
                 videoSize={videoSize}
                 showRemoteVideo={showRemoteVideo}
@@ -343,7 +383,7 @@ function TurnRing({ deadline, totalMs, now, size, timeBank }: { deadline: number
 }
 
 function Seat({
-  seat, state, now, isMe, narrow, winner, bestCards, video, videoSize, showRemoteVideo, reaction, onMenu, bottom,
+  seat, state, now, isMe, narrow, winner, bestHole, hasShowdown, video, videoSize, showRemoteVideo, reaction, onMenu, bottom,
 }: {
   seat: PublicSeat;
   state: GameView;
@@ -351,7 +391,8 @@ function Seat({
   isMe: boolean;
   narrow: boolean;
   winner: boolean;
-  bestCards: Set<string>;
+  bestHole: Set<string>;
+  hasShowdown: boolean;
   video: VideoChat;
   videoSize: number;
   showRemoteVideo: boolean;
@@ -359,8 +400,12 @@ function Seat({
   onMenu?: (s: PublicSeat) => void;
   bottom: boolean;
 }) {
-  const { bbMode } = useDisplayPrefs();
+  const { bbMode, handHint } = useDisplayPrefs();
   const money = useMoney();
+  const hint = useMemo(
+    () => (isMe && handHint && !state.result && seat.inHand && !seat.folded ? describeHand(state.me.cards, state.board) : null),
+    [isMe, handHint, state.result, seat.inHand, seat.folded, state.me.cards, state.board],
+  );
   const turn = state.turn?.userId === seat.userId ? state.turn : null;
   const remote = video.remote.find((r) => r.userId === seat.userId);
   const size = Math.round(videoSize * (narrow ? 0.72 : 1) * (isMe && narrow ? 1.05 : 1));
@@ -377,7 +422,8 @@ function Seat({
   return (
     <div className={cx('relative flex flex-col items-center', seat.folded && !winner && 'opacity-55')}>
       {/* Cartes */}
-      <div className={cx('flex', isMe ? 'mb-1 gap-1' : '-mb-3 -space-x-3', bottom && isMe && 'order-first')}>
+      <div className={cx('relative flex', isMe ? 'mb-1 gap-1' : '-mb-3 -space-x-3', bottom && isMe && 'order-first')}>
+        {hint && <HandHintPill hint={hint} narrow={narrow} />}
         <AnimatePresence>
           {shownCards?.map((c, k) => (
             <motion.div
@@ -387,7 +433,7 @@ function Seat({
               exit={{ opacity: 0, y: -12, scale: 0.8 }}
               transition={{ type: 'spring', damping: 16, stiffness: 220, delay: k * 0.12 }}
             >
-              <PlayingCard card={c} faceDown={!c} size={cardSize} flip={!!c && !isMe} highlight={!!c && bestCards.has(c) && !!state.result} />
+              <PlayingCard card={c} faceDown={!c} size={cardSize} flip={!!c && !isMe} highlight={!!c && bestHole.has(c)} dim={!!c && hasShowdown && !bestHole.has(c)} />
             </motion.div>
           ))}
         </AnimatePresence>
@@ -421,7 +467,7 @@ function Seat({
 
       {/* Plaque nom + tapis */}
       <div className={cx('relative -mt-2 min-w-[84px] rounded-lg bg-gradient-to-b from-night-700/95 to-night-900/95 px-2.5 py-1 text-center shadow-lg ring-1 sm:min-w-[104px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
-        <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && '🤖 '}{seat.username}</div>
+        <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && <span title={seat.botStyle ? `Robot « ${seat.botStyle.label} » : ${seat.botStyle.description}` : 'Robot'}>{seat.botStyle?.emoji ?? '🤖'} </span>}{seat.username}</div>
         <button
           type="button"
           onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
@@ -452,7 +498,7 @@ function Seat({
               {eq.tie >= 0.005 && <span className="text-[9px] font-semibold opacity-80">+{pctLabel(eq.tie)} égalité</span>}
             </motion.span>
           ) : result ? (
-            <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center rounded-xl bg-black/70 px-2 py-0.5 text-center text-[10px] font-semibold leading-tight text-gold-300">
+            <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className={cx('flex flex-col items-center rounded-xl px-2 py-0.5 text-center text-[10px] font-semibold leading-tight', winner ? 'bg-gold-400 text-night-950 shadow-[0_0_14px_rgba(236,201,119,0.6)]' : 'bg-black/70 text-white/70')}>
               {state.result?.shown2 ? (
                 <>
                   <span><span className="text-white/50">1 : </span>{result.description}</span>
@@ -479,6 +525,30 @@ function Seat({
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** Étiquette « votre main » à côté de ses cartes. */
+function HandHintPill({ hint, narrow }: { hint: HandHint; narrow: boolean }) {
+  const tone = ['ring-white/15', 'ring-sky-300/40', 'ring-gold-400/60', 'ring-gold-300 shadow-[0_0_14px_rgba(236,201,119,0.45)]'][hint.tier];
+  return (
+    <motion.div
+      key={hint.made + hint.draws.join()}
+      initial={{ opacity: 0, scale: 0.85 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className={cx(
+        'pointer-events-none absolute z-30 flex flex-col whitespace-nowrap rounded-xl bg-black/75 px-2.5 py-1 leading-tight ring-1 backdrop-blur',
+        narrow ? 'bottom-full left-1/2 mb-1 -translate-x-1/2 items-center' : 'left-full top-1/2 ml-3 -translate-y-1/2 items-start',
+        tone,
+      )}
+      title="Votre main actuelle"
+    >
+      <span className={cx('font-bold', narrow ? 'text-[11px]' : 'text-xs', hint.onBoard ? 'text-white/70' : 'text-gold-300')}>
+        {hint.made}
+        {hint.onBoard && <span className="ml-1 text-[10px] font-semibold text-white/50">(sur le board)</span>}
+      </span>
+      {hint.draws.length > 0 && <span className="text-[10px] font-semibold text-sky-300">+ {hint.draws.join(' + ')}</span>}
+    </motion.div>
   );
 }
 

@@ -555,6 +555,12 @@ function SeatMenu({ seat, state, onClose, run }: { seat: PublicSeat | null; stat
             <div className="text-xs text-muted">{seat.connected ? 'Connecté' : 'Déconnecté'} · Time bank {seat.timeBank} s</div>
           </div>
         </div>
+        {seat.botStyle && (
+          <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/10">
+            <div className="text-sm font-semibold">{seat.botStyle.emoji} Robot « {seat.botStyle.label} »</div>
+            <div className="text-xs text-muted">{seat.botStyle.description}</div>
+          </div>
+        )}
         <Link href={`/players/${seat.userId}`} className="block"><Button className="w-full">Voir le profil et les statistiques</Button></Link>
         {state.me.isRoomAdmin && seat.isBot && (
           <Button className="w-full" onClick={async () => { if (await run('game:removeBot', { userId: seat.userId }, 'Le robot quitte la table')) onClose(); }}>
@@ -676,6 +682,7 @@ function DisplayToggles() {
     <>
       <Toggle label="Montants en grosses blindes" hint="Ex. 50 → 0,5 BB · 100 → 1 BB (aussi via le bouton BB en haut)" checked={d.bbMode} onChange={(v) => setDisplayPrefs({ bbMode: v })} />
       <Toggle label="Raccourcis clavier" hint="F se coucher · C parole/suivre · R miser · 1–8 tailles · ↑↓ ajuster" checked={d.keyboard} onChange={(v) => setDisplayPrefs({ keyboard: v })} />
+      <Toggle label="Afficher ma main" hint="« Paire de Rois + tirage couleur » à côté de vos cartes pendant le coup" checked={d.handHint} onChange={(v) => setDisplayPrefs({ handHint: v })} />
       <Toggle label="Jeu 4 couleurs" hint="Carreaux bleus et trèfles verts, plus lisible ; sinon jeu classique rouge et noir" checked={d.fourColor} onChange={(v) => setDisplayPrefs({ fourColor: v })} />
     </>
   );

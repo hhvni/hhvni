@@ -5,11 +5,12 @@
  */
 import { randomBytes } from 'node:crypto';
 import { prisma } from '../db.js';
+import { botStyleOf, type BotStyle } from './botBrain.js';
 
 export const BOT_EMAIL_DOMAIN = '@bots.cercle-prive.local';
 export const isBotEmail = (email: string) => email.endsWith(BOT_EMAIL_DOMAIN);
 
-const NAMES = ['Ada', 'Bruno', 'Chloé', 'Dédé', 'Émile', 'Fanny', 'Gaston', 'Hélène', 'Igor', 'Josette', 'Kiki', 'Lulu', 'Marcel', 'Nina', 'Oscar'];
+export const BOT_NAMES = ['Ada', 'Bruno', 'Chloé', 'Dédé', 'Émile', 'Fanny', 'Gaston', 'Hélène', 'Igor', 'Josette', 'Kiki', 'Lulu', 'Marcel', 'Nina', 'Oscar'];
 
 /** Retourne un robot libre (crée le compte si besoin) avec un solde suffisant. */
 export async function getBotUser(exclude: string[], minChips: number): Promise<{ id: string; username: string; avatarUrl: string | null }> {
@@ -20,8 +21,8 @@ export async function getBotUser(exclude: string[], minChips: number): Promise<{
   let bot = existing;
   if (!bot) {
     const count = await prisma.user.count({ where: { email: { endsWith: BOT_EMAIL_DOMAIN } } });
-    const base = `Robot ${NAMES[count % NAMES.length]}`;
-    const username = count < NAMES.length ? base : `${base} ${Math.floor(count / NAMES.length) + 1}`;
+    const base = `Robot ${BOT_NAMES[count % BOT_NAMES.length]}`;
+    const username = count < BOT_NAMES.length ? base : `${base} ${Math.floor(count / BOT_NAMES.length) + 1}`;
     bot = await prisma.user.create({
       data: {
         email: `bot-${randomBytes(6).toString('hex')}${BOT_EMAIL_DOMAIN}`,
@@ -34,3 +35,6 @@ export async function getBotUser(exclude: string[], minChips: number): Promise<{
   if (bot.chips < minChips) bot = await prisma.user.update({ where: { id: bot.id }, data: { chips: 1_000_000 } });
   return { id: bot.id, username: bot.username, avatarUrl: bot.avatarUrl };
 }
+
+/** Caractère de jeu d'un robot (stable, déduit de son nom). */
+export const botStyleFor = (username: string): BotStyle => botStyleOf(username, BOT_NAMES);

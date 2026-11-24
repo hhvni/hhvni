@@ -65,6 +65,8 @@ export interface PublicSeat {
   isBigBlind: boolean;
   pendingRebuy: boolean;
   isBot: boolean;
+  /** Caractère de jeu d'un robot. */
+  botStyle: { label: string; emoji: string; description: string } | null;
   /** A posé un straddle sur cette main. */
   isStraddle: boolean;
   /** Attend la grosse blinde avant d'être servi (cash game). */

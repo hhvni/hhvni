@@ -11,10 +11,12 @@ export interface DisplayPrefs {
   bbMode: boolean;
   /** Raccourcis clavier à la table (ordinateur). */
   keyboard: boolean;
+  /** Affiche « votre main » (paire, tirages…) à côté de ses cartes. */
+  handHint: boolean;
 }
 
 const KEY = 'pp-display-prefs';
-const DEFAULTS: DisplayPrefs = { fourColor: true, bbMode: false, keyboard: true };
+const DEFAULTS: DisplayPrefs = { fourColor: true, bbMode: false, keyboard: true, handHint: true };
 let current: DisplayPrefs = DEFAULTS;
 let loaded = false;
 const listeners = new Set<() => void>();

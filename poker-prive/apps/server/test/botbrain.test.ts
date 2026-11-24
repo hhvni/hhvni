@@ -60,3 +60,43 @@ describe('Cerveau des robots', () => {
     expect(r.preflopAllIn).toBeGreaterThan(0.15);
   }, 120_000);
 });
+
+describe('Caractères des robots', () => {
+  it('Roc, Requin, Fou et Pigeon jouent vraiment différemment', () => {
+    const styles = ['requin', 'roc', 'fou', 'pigeon', 'requin', 'roc'] as const;
+    const t = new PokerTable({ smallBlind: 50, bigBlind: 100, ante: 0, maxSeats: 9 });
+    styles.forEach((_, i) => t.sit(i, `b${i}`, `Bot${i}`, 10000));
+    const acc = new Map<string, { seen: number; vpip: number; pfr: number; aggr: number; passive: number }>();
+    for (const s of new Set(styles)) acc.set(s, { seen: 0, vpip: 0, pfr: 0, aggr: 0, passive: 0 });
+    const styleOf = (id: string) => styles[Number(id.slice(1))]!;
+    for (let n = 0; n < 700; n++) {
+      for (const s of t.seats) if (s) s.stack = 10000;
+      const h = t.startHand();
+      let guard = 0;
+      while (!h.finished && guard++ < 300) {
+        const id = t.currentPlayerId()!;
+        const d = decide(h, id, t.legalActions(id)!, styleOf(id));
+        t.act(id, { type: d.type === 'fold' && t.legalActions(id)!.canCheck ? 'check' : d.type, amount: d.amount });
+      }
+      for (const s of computeHandStats(h.events)) {
+        const a = acc.get(styleOf(s.playerId))!;
+        a.seen++;
+        if (s.vpip) a.vpip++;
+        if (s.pfr) a.pfr++;
+      }
+      for (const e of h.events) {
+        if (e.type !== 'action' || e.street === 'preflop') continue;
+        const a = acc.get(styleOf(e.playerId))!;
+        if (e.action === 'bet' || e.action === 'raise') a.aggr++;
+        else if (e.action === 'call') a.passive++;
+      }
+    }
+    const r = Object.fromEntries([...acc].map(([k, a]) => [k, { vpip: +(a.vpip / a.seen).toFixed(3), pfr: +(a.pfr / a.seen).toFixed(3), af: +(a.aggr / Math.max(1, a.passive)).toFixed(2) }]));
+    console.log('styles', JSON.stringify(r));
+    expect(r.roc!.vpip).toBeLessThan(r.requin!.vpip);
+    expect(r.fou!.pfr).toBeGreaterThan(r.requin!.pfr * 1.4);
+    expect(r.pigeon!.vpip).toBeGreaterThan(r.requin!.vpip);
+    expect(r.pigeon!.pfr).toBeLessThan(r.requin!.pfr);
+    expect(r.pigeon!.af).toBeLessThan(r.fou!.af);
+  }, 180_000);
+});

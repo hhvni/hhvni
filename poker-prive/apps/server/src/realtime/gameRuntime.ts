@@ -16,8 +16,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import { env } from '../config.js';
 import { logger } from '../logger.js';
-import { getBotUser } from '../services/bots.js';
-import { decide, type BotDecision } from '../services/botBrain.js';
+import { botStyleFor, getBotUser } from '../services/bots.js';
+import { BOT_STYLES, decide, type BotDecision } from '../services/botBrain.js';
 
 const FAST = env.FAST_MODE === '1';
 const fmt = (n: number) => n.toLocaleString('fr-FR');
@@ -278,7 +278,7 @@ export class GameRuntime {
     m.away = false;
     m.timeouts = 0;
     this.table.sit(seat, user.id, user.username, buyIn);
-    this.log(`${user.username} s'assoit avec ${fmt(buyIn)} jetons`, 'system');
+    this.log(`${user.username}${this.meta.get(user.id)?.bot ? ` (${BOT_STYLES[botStyleFor(user.username)].emoji} ${BOT_STYLES[botStyleFor(user.username)].label})` : ''} s'assoit avec ${fmt(buyIn)} jetons`, 'system');
     await this.refreshBankroll(user.id);
     this.changed();
     this.maybeStartHand();
@@ -1155,7 +1155,7 @@ export class GameRuntime {
       // Le robot décide tout de suite (l'état ne bouge pas avant son action), puis « réfléchit »
       let decision: BotDecision;
       try {
-        decision = decide(this.table.hand!, userId, this.table.legalActions(userId)!);
+        decision = decide(this.table.hand!, userId, this.table.legalActions(userId)!, botStyleFor(m.username));
       } catch (err) {
         logger.warn({ err }, 'Décision du robot impossible, check/fold');
         decision = { type: 'fold', thinkMs: 1000 };
@@ -1370,6 +1370,7 @@ export class GameRuntime {
         isSmallBlind: !!h && h.sbSeat === i && !h.finished && !h.bombPot, isBigBlind: !!h && h.bbSeat === i && !h.finished && !h.bombPot,
         pendingRebuy: !!m?.pendingRebuyUntil,
         isBot: !!m?.bot,
+        botStyle: m?.bot ? (({ label, emoji, description }) => ({ label, emoji, description }))(BOT_STYLES[botStyleFor(s.name)]) : null,
         isStraddle: !!h && !h.finished && h.straddleSeat === i,
         waitingBB: !!s.waitBB && !s.postNow && !hp,
       };
