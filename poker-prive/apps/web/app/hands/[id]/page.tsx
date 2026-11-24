@@ -52,8 +52,14 @@ function buildFrames(h: HandResp['hand']): Frame[] {
         const p = cur.players[e.playerId]!;
         p.stack -= e.amount;
         p.bet += e.amount;
-        p.action = e.kind === 'sb' ? 'SB' : 'BB';
-        push(`${name(e.playerId)} paie la ${e.kind === 'sb' ? 'petite' : 'grosse'} blind (${fmt(e.amount)})`);
+        p.action = e.kind === 'sb' ? 'SB' : e.kind === 'dead' ? 'Blinde morte' : 'BB';
+        if (e.kind === 'dead') {
+          p.bet -= e.amount;
+          cur.pot += e.amount;
+        }
+        push(e.kind === 'post' ? `${name(e.playerId)} paie la grosse blinde pour entrer (${fmt(e.amount)})`
+          : e.kind === 'dead' ? `${name(e.playerId)} paie la petite blinde manquée (${fmt(e.amount)}, argent mort)`
+          : `${name(e.playerId)} paie la ${e.kind === 'sb' ? 'petite' : 'grosse'} blind (${fmt(e.amount)})`);
         break;
       }
       case 'action': {
@@ -92,6 +98,7 @@ function buildFrames(h: HandResp['hand']): Frame[] {
           cur.players[x.playerId]!.shown = x.hole;
           cur.players[x.playerId]!.action = x.description;
         }
+        for (const id of e.mucked ?? []) cur.players[id]!.action = 'Main jetée';
         push('Abattage');
         break;
       case 'potAwarded':

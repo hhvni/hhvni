@@ -81,6 +81,7 @@ export function computeHandStats(events: HandEvent[]): PlayerHandStats[] {
         break;
       case 'showdown':
         for (const h of e.hands) stats.get(h.playerId)!.wentToShowdown = true;
+        for (const id of e.mucked ?? []) stats.get(id)!.wentToShowdown = true;
         break;
       case 'potAwarded':
         for (const [id, amt] of Object.entries(e.shares)) {

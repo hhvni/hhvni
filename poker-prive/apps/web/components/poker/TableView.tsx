@@ -363,6 +363,10 @@ function Seat({
             </motion.span>
           ) : result ? (
             <motion.span key="res" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-gold-300">{result.description}</motion.span>
+          ) : state.result?.mucked.includes(seat.userId) ? (
+            <span className="rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-muted">Main jetée</span>
+          ) : seat.waitingBB && !seat.sittingOut ? (
+            <Badge tone="blue">Attend la BB</Badge>
           ) : seat.pendingRebuy ? (
             <Badge tone="gold">Rebuy ?</Badge>
           ) : seat.sittingOut ? (

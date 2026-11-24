@@ -8,7 +8,7 @@
  */
 import { randomInt } from 'node:crypto';
 import {
-  allInEquity, computeHandStats, PokerError, PokerTable, prizePool, totalPot,
+  allInEquity, computeHandStats, evaluateBest, PokerError, PokerTable, prizePool, totalPot,
   type ActionType, type GameConfig, type GameStatus, type GameView, type HandEvent,
   type HandResultView, type LogLine, type PublicSeat, type TableSnapshot, type TournamentView, type TurnInfo,
 } from '@poker/engine';
@@ -132,6 +132,7 @@ export class GameRuntime {
     this.status = init.status;
     if (init.snapshot) {
       this.table = PokerTable.restore(init.snapshot.table);
+      this.table.config.enforceBlindRules = init.config.mode === 'CASH';
       // Après un redémarrage, les humains doivent se reconnecter ; les robots, pilotés par le serveur, restent connectés
       for (const m of init.snapshot.meta) this.meta.set(m.userId, { ...m, connected: !!m.bot, disconnectedAt: m.bot ? null : Date.now() });
       this.tournament = init.snapshot.tournament;
@@ -140,6 +141,7 @@ export class GameRuntime {
     } else {
       this.table = new PokerTable({
         smallBlind: init.config.smallBlind, bigBlind: init.config.bigBlind, ante: init.config.ante, maxSeats: init.config.maxSeats,
+        enforceBlindRules: init.config.mode === 'CASH',
       });
     }
   }
@@ -343,6 +345,43 @@ export class GameRuntime {
     } catch {
       await this.removeCashPlayer(userId);
     }
+  }
+
+  /** Payer la grosse blinde (et la petite manquée) pour jouer dès la prochaine main. */
+  postNow(userId: string): void {
+    try {
+      this.table.requestPostNow(userId);
+    } catch (e) {
+      if (e instanceof PokerError) throw new GameError(e.code, e.message);
+      throw e;
+    }
+    const amount = this.table.postNowAmount(userId);
+    this.log(`${this.meta.get(userId)?.username ?? '?'} paiera ${fmt(amount)} pour jouer dès la prochaine main`, 'system');
+    this.changed();
+    this.maybeStartHand();
+  }
+
+  /** Montrer volontairement ses cartes à la fin d'un coup. */
+  showCards(userId: string): void {
+    const h = this.table.hand;
+    if (!h?.finished || !this.staging.resultVisible) throw new GameError('NOT_FINISHED', 'Vous pourrez montrer vos cartes à la fin du coup');
+    let shown;
+    try {
+      shown = this.table.showCards(userId);
+    } catch (e) {
+      if (e instanceof PokerError) throw new GameError(e.code, e.message);
+      throw e;
+    }
+    const full = [...shown.hole, ...h.board];
+    const e = full.length >= 5 ? evaluateBest(full) : null;
+    if (this.result) {
+      this.result.shown.push({ userId, cards: shown.hole, description: e?.description ?? '', best: [] });
+      this.result.mucked = this.result.mucked.filter((id) => id !== userId);
+    }
+    this.log(`${this.meta.get(userId)?.username ?? '?'} montre ses cartes : ${shown.hole.map(cardLabel).join(' ')}`, 'action');
+    const handNumber = h.handNumber;
+    this.enqueue(() => prisma.handPlayer.updateMany({ where: { userId, hand: { gameId: this.id, handNumber } }, data: { shown: true } }));
+    this.changed();
   }
 
   setAway(userId: string, away: boolean): void {
@@ -747,7 +786,9 @@ export class GameRuntime {
       shown: showdown && showdown.type === 'showdown'
         ? showdown.hands.map((s) => ({ userId: s.playerId, cards: s.hole, description: s.description, best: s.best }))
         : [],
+      mucked: showdown && showdown.type === 'showdown' ? (showdown.mucked ?? []) : [],
     };
+    for (const id of this.result.mucked) this.log(`${this.meta.get(id)?.username ?? '?'} jette sa main`, 'action');
 
     // Déroulé progressif du board en cas d'all-in (affichage contrôlé par le serveur)
     const stageCount = streetsDealt > 1 || (streetsDealt === 1 && !!showdown && boardBefore < 5) ? streetsDealt : 0;
@@ -1110,8 +1151,8 @@ export class GameRuntime {
       let cards: PublicSeat['cards'] = null;
       if (hp && (!h!.finished || this.result)) {
         if (hp.playerId === userId) cards = [...hp.hole];
-        else if (hp.folded) cards = null;
         else if (hp.shown && (showdownIds.has(hp.playerId) || h!.events.some((e) => e.type === 'reveal' && e.hands.some((x) => x.playerId === hp.playerId)))) cards = [...hp.hole];
+        else if (hp.folded || this.result?.mucked.includes(hp.playerId)) cards = null;
         else cards = [null, null];
       }
       // Pendant une main, le tapis vivant est celui de la main (mises déduites)
@@ -1124,6 +1165,7 @@ export class GameRuntime {
         isSmallBlind: !!h && h.sbSeat === i && !h.finished, isBigBlind: !!h && h.bbSeat === i && !h.finished,
         pendingRebuy: !!m?.pendingRebuyUntil,
         isBot: !!m?.bot,
+        waitingBB: !!s.waitBB && !s.postNow && !hp,
       };
     });
 
@@ -1168,6 +1210,9 @@ export class GameRuntime {
         isRoomAdmin: this.isRoomAdmin(userId), canReload: resultVisible && this.reloadAmountFor(userId) > 0, reloadAmount: this.reloadAmountFor(userId),
         canRebuy: this.canRebuy(userId), canAddon: this.canAddon(userId), leavingAfterHand: !!m?.leaveAfterHand,
         bankroll: this.bankrolls.get(userId) ?? 0, registered: this.registered.includes(userId),
+        postNowAmount: mySeat >= 0 && !this.table.seats[mySeat]!.postNow ? this.table.postNowAmount(userId) : 0,
+        postNowRequested: mySeat >= 0 && !!this.table.seats[mySeat]!.postNow,
+        canShow: !!h?.finished && resultVisible && !!this.result && !!myHp && !myHp.shown,
       },
       tournament,
       spectators: this.spectatorCount,

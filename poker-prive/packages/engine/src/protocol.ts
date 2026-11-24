@@ -61,6 +61,8 @@ export interface PublicSeat {
   isBigBlind: boolean;
   pendingRebuy: boolean;
   isBot: boolean;
+  /** Attend la grosse blinde avant d'être servi (cash game). */
+  waitingBB: boolean;
 }
 
 export interface TurnInfo {
@@ -76,6 +78,8 @@ export interface HandResultView {
   handNumber: number;
   pots: { amount: number; winners: string[]; description: string | null }[];
   shown: { userId: string; cards: Card[]; description: string; best: Card[] }[];
+  /** Joueurs ayant jeté leur main au showdown (cartes non montrées). */
+  mucked: string[];
 }
 
 export interface TournamentView {
@@ -125,6 +129,11 @@ export interface GameView {
     leavingAfterHand: boolean;
     bankroll: number;
     registered: boolean;
+    /** Montant à payer pour jouer sans attendre la grosse blinde (0 si non concerné). */
+    postNowAmount: number;
+    postNowRequested: boolean;
+    /** Peut montrer ses cartes après le coup. */
+    canShow: boolean;
   };
   tournament: TournamentView | null;
   spectators: number;

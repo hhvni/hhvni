@@ -134,7 +134,7 @@ function Game({ gameId }: { gameId: string }) {
       {video.remote.filter((r) => r.mic).map((r) => <StreamAudio key={r.userId} stream={r.stream} />)}
 
       {/* En-tête */}
-      <header className="z-30 flex h-14 shrink-0 items-center gap-2 border-b border-white/5 bg-night-900/80 px-3 backdrop-blur-xl sm:px-4">
+      <header className="relative z-40 flex h-14 shrink-0 items-center gap-2 border-b border-white/5 bg-night-900/80 px-3 backdrop-blur-xl sm:px-4">
         <Link href={`/rooms/${state.roomId}`} className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-ink" aria-label="Retour au salon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6" /></svg>
         </Link>
@@ -272,6 +272,12 @@ function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run:
   if (state.me.canReload) items.push(<Button key="reload" size="sm" variant="gold" onClick={() => run('game:reload', {}, 'Jetons rechargés')}>Recharger {fmt(state.me.reloadAmount)}</Button>);
   if (state.me.canAddon) items.push(<Button key="addon" size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>);
   if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
+  if (state.me.canShow) items.push(<Button key="show" size="sm" variant="ghost" onClick={() => run('game:showCards', {})}>Montrer mes cartes</Button>);
+  if (state.me.postNowAmount > 0) {
+    items.push(<span key="wbb" className="rounded-lg bg-night-900/85 px-2 py-1 text-xs text-muted">Vous attendez la grosse blinde pour être servi</span>);
+    items.push(<Button key="post" size="sm" variant="gold" onClick={() => run('game:postNow', {}, 'Vous jouerez dès la prochaine main')}>Payer {fmt(state.me.postNowAmount)} et jouer maintenant</Button>);
+  }
+  if (state.me.postNowRequested) items.push(<Badge key="posted">Servi à la prochaine main</Badge>);
   if (state.me.leavingAfterHand) items.push(<Badge key="leaving">Départ après la main</Badge>);
   if (state.status === 'RUNNING' && activePlayers < 2 && !state.equity && !state.turn) items.push(<span key="wait" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">En attente d&apos;au moins deux joueurs…</span>);
   if (state.status === 'WAITING' && state.mode === 'CASH' && !isAdmin) items.push(<span key="w2" className="rounded-lg bg-night-900/80 px-2 py-1 text-xs text-muted">L&apos;administrateur va démarrer la partie.</span>);

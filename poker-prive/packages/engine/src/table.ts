@@ -29,6 +29,11 @@ export interface TableConfig {
   bigBlind: number;
   ante: number;
   maxSeats: number;
+  /**
+   * Règles de blinds des cash games : un nouveau joueur, ou un joueur qui a
+   * manqué sa grosse blinde, attend la grosse blinde ou paie pour jouer tout de suite.
+   */
+  enforceBlindRules?: boolean;
 }
 
 export interface PlayerAction {
@@ -43,6 +48,12 @@ export interface SeatInfo {
   name: string;
   stack: number;
   sittingOut: boolean;
+  /** Attend la grosse blinde avant d'être servi (nouveau joueur / blinde manquée). */
+  waitBB?: boolean;
+  /** A demandé à payer pour jouer tout de suite (1 BB live + SB manquée en argent mort). */
+  postNow?: boolean;
+  missedBB?: boolean;
+  missedSB?: boolean;
 }
 
 export interface HandPlayer {
@@ -66,13 +77,13 @@ export interface HandPlayer {
 export type HandEvent =
   | { type: 'handStart'; handNumber: number; buttonSeat: number; sbSeat: number; bbSeat: number; smallBlind: number; bigBlind: number; ante: number; players: { playerId: string; name: string; seat: number; stack: number }[] }
   | { type: 'ante'; playerId: string; amount: number; allIn: boolean }
-  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb'; amount: number; allIn: boolean }
+  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb' | 'post' | 'dead'; amount: number; allIn: boolean }
   | { type: 'holeCards'; count: number }
   | { type: 'action'; street: Street; playerId: string; action: ActionType; amount: number; to: number; allIn: boolean }
   | { type: 'street'; street: Street; cards: Card[]; board: Card[] }
   | { type: 'uncalled'; playerId: string; amount: number }
   | { type: 'reveal'; hands: { playerId: string; hole: Card[] }[] }
-  | { type: 'showdown'; hands: { playerId: string; hole: Card[]; description: string; category: number; best: Card[] }[] }
+  | { type: 'showdown'; hands: { playerId: string; hole: Card[]; description: string; category: number; best: Card[] }[]; mucked?: string[] }
   | { type: 'potAwarded'; potIndex: number; amount: number; winners: string[]; shares: Record<string, number>; description: string | null; showdown: boolean }
   | { type: 'handEnd'; stacks: Record<string, number> };
 
@@ -149,7 +160,26 @@ export class PokerTable {
     if (this.seats[seat]) throw new PokerError('SEAT_TAKEN', 'Siège occupé');
     if (this.seatOf(playerId) !== -1) throw new PokerError('ALREADY_SEATED', 'Joueur déjà assis');
     if (!Number.isInteger(stack) || stack < 0) throw new PokerError('BAD_STACK', 'Tapis invalide');
-    this.seats[seat] = { seat, playerId, name, stack, sittingOut: false };
+    // Cash game déjà commencé : le nouveau venu attend la grosse blinde (ou paie)
+    const wait = !!this.config.enforceBlindRules && this.handNumber > 0;
+    this.seats[seat] = { seat, playerId, name, stack, sittingOut: false, waitBB: wait, postNow: false, missedBB: false, missedSB: false };
+  }
+
+  /** Le joueur paie 1 BB (+ SB manquée) pour être servi dès la prochaine main. */
+  requestPostNow(playerId: string): void {
+    const s = this.seatOf(playerId);
+    if (s === -1) throw new PokerError('NOT_SEATED', 'Joueur non assis');
+    const seat = this.seats[s]!;
+    if (!seat.waitBB) throw new PokerError('NOT_WAITING', "Vous n'attendez pas la grosse blinde");
+    seat.postNow = true;
+  }
+
+  /** Montant à payer pour jouer tout de suite (0 si le joueur n'attend pas). */
+  postNowAmount(playerId: string): number {
+    const s = this.seatOf(playerId);
+    const seat = s === -1 ? null : this.seats[s]!;
+    if (!seat?.waitBB) return 0;
+    return this.config.bigBlind + (seat.missedSB ? this.config.smallBlind : 0);
   }
 
   /** Retire un joueur. Interdit pendant une main où il est encore engagé. */
@@ -165,7 +195,10 @@ export class PokerTable {
   setSittingOut(playerId: string, value: boolean): void {
     const s = this.seatOf(playerId);
     if (s === -1) throw new PokerError('NOT_SEATED', 'Joueur non assis');
-    this.seats[s]!.sittingOut = value;
+    const seat = this.seats[s]!;
+    seat.sittingOut = value;
+    // De retour après avoir manqué sa grosse blinde : il doit l'attendre (ou payer)
+    if (!value && this.config.enforceBlindRules && seat.missedBB) seat.waitBB = true;
   }
 
   addChips(playerId: string, amount: number): void {
@@ -197,7 +230,36 @@ export class PokerTable {
   }
 
   canStartHand(): boolean {
-    return (!this.hand || this.hand.finished) && this.eligibleSeats().length >= 2;
+    return (!this.hand || this.hand.finished) && this.planHand() !== null;
+  }
+
+  /**
+   * Détermine qui est servi et les positions de la prochaine main, en
+   * appliquant les règles de blinds (attente de la grosse blinde).
+   */
+  private planHand(): { seats: number[]; button: number; sb: number; bb: number; posters: number[] } | null {
+    const cands = this.eligibleSeats();
+    const enforce = !!this.config.enforceBlindRules;
+    let waiting = enforce ? cands.filter((x) => this.seats[x]!.waitBB && !this.seats[x]!.postNow) : [];
+    let active = cands.filter((x) => !waiting.includes(x));
+    // Moins de trois joueurs actifs : personne n'attend (sinon la partie ne peut pas se jouer)
+    if (active.length < 3) {
+      active = cands;
+      waiting = [];
+    }
+    if (active.length < 2) return null;
+    const button = this.nextFrom(this.buttonSeat, active);
+    const headsUp = active.length === 2;
+    const sb = headsUp ? button : this.nextFrom(button, active);
+    let bb = this.nextFrom(sb, active);
+    // La grosse blinde « passe » sur un joueur en attente : il entre comme grosse blinde
+    const entrant = waiting.length ? this.nextFrom(sb, [...active, ...waiting]) : -1;
+    if (entrant !== -1 && waiting.includes(entrant)) {
+      bb = entrant;
+      active = [...active, entrant];
+    }
+    const posters = active.filter((x) => x !== sb && x !== bb && enforce && this.seats[x]!.waitBB && this.seats[x]!.postNow);
+    return { seats: active.sort((a, b) => a - b), button, sb, bb, posters };
   }
 
   // ───────────────────────────── Main ─────────────────────────────
@@ -209,15 +271,18 @@ export class PokerTable {
    */
   startHand(rand: RandomInt = secureRandomInt, presetDeck?: Card[]): HandState {
     if (this.hand && !this.hand.finished) throw new PokerError('HAND_IN_PROGRESS', 'Une main est déjà en cours');
-    const eligible = this.eligibleSeats();
-    if (eligible.length < 2) throw new PokerError('NOT_ENOUGH_PLAYERS', 'Il faut au moins deux joueurs');
+    const plan = this.planHand();
+    if (!plan) throw new PokerError('NOT_ENOUGH_PLAYERS', 'Il faut au moins deux joueurs');
+    const eligible = plan.seats;
 
     const { smallBlind, bigBlind, ante } = this.config;
-    this.buttonSeat = this.nextFrom(this.buttonSeat, eligible);
-    const headsUp = eligible.length === 2;
-    const sbSeat = headsUp ? this.buttonSeat : this.nextFrom(this.buttonSeat, eligible);
-    const bbSeat = this.nextFrom(sbSeat, eligible);
+    const prevSb = this.hand?.sbSeat ?? null;
+    const prevBb = this.hand?.bbSeat ?? null;
+    this.buttonSeat = plan.button;
+    const sbSeat = plan.sb;
+    const bbSeat = plan.bb;
     this.handNumber += 1;
+    if (this.config.enforceBlindRules) this.trackMissedBlinds(prevSb, prevBb, sbSeat, bbSeat, eligible);
 
     const deck = new Deck(rand, presetDeck);
     const players: HandPlayer[] = eligible.map((seat) => {
@@ -254,6 +319,27 @@ export class PokerTable {
     // Blinds
     this.postBlind(this.playerAt(sbSeat)!, smallBlind, 'sb');
     this.postBlind(this.playerAt(bbSeat)!, bigBlind, 'bb');
+    // Joueurs qui paient pour entrer tout de suite : 1 BB « live » + SB manquée en argent mort
+    for (const seat of plan.posters) {
+      const p = this.playerAt(seat)!;
+      const info = this.seats[seat]!;
+      this.postBlind(p, bigBlind, 'post');
+      if (info.missedSB && p.stack > 0) {
+        const dead = Math.min(smallBlind, p.stack);
+        p.stack -= dead;
+        p.totalBet += dead;
+        if (p.stack === 0) p.allIn = true;
+        hand.events.push({ type: 'blind', playerId: p.playerId, kind: 'dead', amount: dead, allIn: p.allIn });
+      }
+    }
+    // Tout joueur servi est désormais à jour de ses blindes
+    for (const seat of eligible) {
+      const info = this.seats[seat]!;
+      info.waitBB = false;
+      info.postNow = false;
+      info.missedBB = false;
+      info.missedSB = false;
+    }
     hand.currentBet = bigBlind;
     hand.lastFullRaise = bigBlind;
 
@@ -269,7 +355,25 @@ export class PokerTable {
     return hand;
   }
 
-  private postBlind(p: HandPlayer, amount: number, kind: 'sb' | 'bb'): void {
+  /** Marque les blindes manquées par les joueurs absents sur lesquels elles sont passées. */
+  private trackMissedBlinds(prevSb: number | null, prevBb: number | null, sb: number, bb: number, dealt: number[]): void {
+    const passed = (from: number | null, to: number, seat: number) => {
+      if (from === null) return false;
+      // seat est-il dans l'intervalle (from, to] dans le sens horaire ?
+      const n = this.config.maxSeats;
+      const d = (x: number) => (x - from + n) % n;
+      return d(seat) > 0 && d(seat) <= d(to);
+    };
+    for (const info of this.seats) {
+      // Seuls les absents (ou ceux déjà en retard de blinde) manquent des blindes ;
+      // un nouveau venu qui attend la grosse blinde ne doit rien d'autre.
+      if (!info || dealt.includes(info.seat) || !(info.sittingOut || info.missedBB)) continue;
+      if (passed(prevBb, bb, info.seat)) info.missedBB = true;
+      if (passed(prevSb, sb, info.seat)) info.missedSB = true;
+    }
+  }
+
+  private postBlind(p: HandPlayer, amount: number, kind: 'sb' | 'bb' | 'post'): void {
     const amt = Math.min(amount, p.stack);
     p.stack -= amt;
     p.streetBet += amt;
@@ -368,6 +472,18 @@ export class PokerTable {
     this.advanceTurn(p.seat);
     this.progress();
     return h.events.slice(before);
+  }
+
+  /** Après la main, un joueur servi peut montrer volontairement ses cartes. */
+  showCards(playerId: string): { playerId: string; hole: Card[] } {
+    const h = this.hand;
+    if (!h || !h.finished) throw new PokerError('NOT_FINISHED', 'Vous pourrez montrer vos cartes à la fin du coup');
+    const p = h.players.find((x) => x.playerId === playerId);
+    if (!p) throw new PokerError('NOT_IN_HAND', "Vous n'avez pas joué ce coup");
+    if (p.shown) throw new PokerError('ALREADY_SHOWN', 'Vos cartes sont déjà visibles');
+    p.shown = true;
+    h.events.push({ type: 'reveal', hands: [{ playerId, hole: [...p.hole] }] });
+    return { playerId, hole: [...p.hole] };
   }
 
   /** Action automatique en cas de temps écoulé : check si possible, sinon fold. */
@@ -547,24 +663,32 @@ export class PokerTable {
     h.street = 'showdown';
     const live = h.players.filter((p) => !p.folded);
     const evals = new Map<string, EvaluatedHand>();
-    for (const p of live) {
-      evals.set(p.playerId, evaluateBest([...p.hole, ...h.board]));
-      p.shown = true;
-    }
-    // Ordre de dévoilement : dernier agresseur d'abord serait possible ; ici on
-    // montre toutes les mains restantes en partant de la gauche du bouton.
+    for (const p of live) evals.set(p.playerId, evaluateBest([...p.hole, ...h.board]));
     const order = this.orderFrom(h.buttonSeat);
-    h.events.push({
-      type: 'showdown',
-      hands: order.filter((p) => !p.folded).map((p) => {
-        const e = evals.get(p.playerId)!;
-        return { playerId: p.playerId, hole: [...p.hole], description: e.description, category: e.category, best: e.cards };
-      }),
-    });
     const pots = buildPots(h.players.map((p) => ({ playerId: p.playerId, amount: p.totalBet, folded: p.folded })));
     const scores: Record<string, number> = {};
     for (const [id, e] of evals) scores[id] = e.score;
     const awards = distributePots(pots, scores, order.map((p) => p.playerId));
+
+    // Qui montre ? Le dernier agresseur de la river (sinon le premier à gauche du
+    // bouton) montre en premier ; les gagnants montrent ; les mains déjà
+    // retournées (tapis) restent visibles ; les autres perdants jettent leur main.
+    const winners = new Set(awards.flatMap((a) => a.winners));
+    const riverAggr = [...h.events].reverse().find((e) => e.type === 'action' && e.street === 'river' && (e.action === 'bet' || e.action === 'raise' || (e.allIn && e.action !== 'call')));
+    const firstShower = riverAggr && riverAggr.type === 'action' && live.some((p) => p.playerId === riverAggr.playerId)
+      ? riverAggr.playerId
+      : order.find((p) => !p.folded)!.playerId;
+    const showing = order.filter((p) => !p.folded && (p.shown || winners.has(p.playerId) || p.playerId === firstShower));
+    const mucked = order.filter((p) => !p.folded && !showing.includes(p)).map((p) => p.playerId);
+    for (const p of showing) p.shown = true;
+    h.events.push({
+      type: 'showdown',
+      hands: showing.map((p) => {
+        const e = evals.get(p.playerId)!;
+        return { playerId: p.playerId, hole: [...p.hole], description: e.description, category: e.category, best: e.cards };
+      }),
+      mucked,
+    });
     for (const a of awards) {
       for (const [id, amt] of Object.entries(a.shares)) h.players.find((p) => p.playerId === id)!.stack += amt;
       const desc = evals.get(a.winners[0]!)!.description;
