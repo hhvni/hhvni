@@ -6,7 +6,7 @@
  * serveur, qui revalide tout de toute façon.
  *
  * Raccourcis (ordinateur) : F se coucher · C parole/suivre · R miser/relancer ·
- * Entrée valider la mise · A tapis · 1 à 8 tailles · ↑ ↓ ajuster.
+ * Entrée valider la mise · A tapis · 1 à 3 tailles · ↑ ↓ ajuster.
  */
 import { motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,24 +26,26 @@ interface Size {
   to: number;
 }
 
-/** Tailles de mise proposées selon la situation (préflop / postflop, ouverture / relance). */
+/**
+ * Tailles de mise proposées : les 3 plus utilisées selon la situation
+ * (+ le bouton Tapis à part). Le curseur part toujours du minimum légal.
+ *  - Préflop, ouverture : 2,5 / 3 / 4 BB
+ *  - Préflop, face à une relance : 2,5× / 3× / 4×
+ *  - Après le flop : 33 % / 66 % / pot
+ */
 function sizes(l: LegalActions, bb: number, preflop: boolean): Size[] {
   const clamp = (x: number) => Math.max(l.minTo, Math.min(l.maxTo, Math.round(x)));
   const toCall = l.currentBet - l.streetBet;
   const potAfterCall = l.pot + toCall;
   const potTo = (f: number) => (l.currentBet === 0 ? potAfterCall * f : l.currentBet + potAfterCall * f);
   const fr = (n: number) => String(n).replace('.', ',');
-  const list: Size[] = [{ label: 'Min', to: l.minTo }];
+  const list: Size[] = [];
   if (preflop && l.currentBet <= bb) {
-    for (const m of [2, 2.5, 3, 4]) list.push({ label: `${fr(m)} BB`, to: clamp(bb * m) });
-    list.push({ label: 'Pot', to: clamp(potTo(1)) });
+    for (const m of [2.5, 3, 4]) list.push({ label: `${fr(m)} BB`, to: clamp(bb * m) });
   } else if (preflop) {
     for (const m of [2.5, 3, 4]) list.push({ label: `${fr(m)}×`, to: clamp(l.currentBet * m) });
-    list.push({ label: 'Pot', to: clamp(potTo(1)) });
   } else {
-    for (const [f, label] of [[0.33, '33 %'], [0.5, '50 %'], [0.66, '66 %'], [0.75, '75 %'], [1, 'Pot'], [1.5, '150 %']] as const) {
-      list.push({ label, to: clamp(potTo(f)) });
-    }
+    for (const [f, label] of [[0.33, '33 %'], [0.66, '66 %'], [1, 'Pot']] as const) list.push({ label, to: clamp(potTo(f)) });
   }
   // Pas de doublons ni de tailles équivalentes au tapis (le bouton Tapis existe)
   const seen = new Set<number>();
@@ -135,7 +137,7 @@ export function ActionBar({ state, onAction }: Props) {
       else if (k === 'a' && canAggro) setAmount(l.maxTo);
       else if ((k === 'arrowup' || k === '+') && canAggro) setAmount((a) => Math.min(l.maxTo, a + (e.shiftKey ? bb : step)));
       else if ((k === 'arrowdown' || k === '-') && canAggro) setAmount((a) => Math.max(l.minTo, a - (e.shiftKey ? bb : step)));
-      else if (/^[1-8]$/.test(k) && sc[Number(k) - 1]) setAmount(sc[Number(k) - 1]!.to);
+      else if (/^[1-3]$/.test(k) && sc[Number(k) - 1]) setAmount(sc[Number(k) - 1]!.to);
       else return;
       e.preventDefault();
     };
@@ -169,11 +171,11 @@ export function ActionBar({ state, onAction }: Props) {
   const sizing = canAggro && !allInOnly && (
     <div className="space-y-2 rounded-2xl bg-gradient-to-b from-[#12151d]/95 to-[#07090d]/95 p-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.55)] ring-1 ring-gold-400/20 backdrop-blur">
       {/* Tailles prédéfinies : de vrais jetons */}
-      <div className="-my-1 flex justify-start gap-1.5 overflow-x-auto px-1 py-1.5 scroll-thin md:justify-between">
+      <div className="-my-1 flex justify-center gap-2.5 overflow-x-auto px-1 py-1.5 scroll-thin">
         {sc.map((s, i) => (
-          <SizeChip key={s.label} label={s.label} active={amount === s.to} onClick={() => setAmount(s.to)} hint={keyboard ? `Touche ${i + 1}` : undefined} />
+          <SizeChip key={s.label} label={s.label} color={CHIP_COLORS[i % CHIP_COLORS.length]!} active={amount === s.to} onClick={() => setAmount(s.to)} hint={keyboard ? `Touche ${i + 1}` : undefined} />
         ))}
-        <SizeChip label="Tapis" danger active={amount === l.maxTo} onClick={() => setAmount(l.maxTo)} hint={keyboard ? 'Touche A' : undefined} />
+        <SizeChip label="Tapis" color={ALLIN_CHIP} active={amount === l.maxTo} onClick={() => setAmount(l.maxTo)} hint={keyboard ? 'Touche A' : undefined} />
       </div>
       {/* Curseur + montant */}
       <div className="flex items-center gap-2">
@@ -252,7 +254,7 @@ export function ActionBar({ state, onAction }: Props) {
           le centre reste libre pour la plaque du joueur. */}
       <div
         className="flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1fr)_clamp(150px,18vw,230px)_minmax(0,1fr)] md:items-end md:gap-0"
-        title={keyboard ? 'Clavier : F se coucher · C parole/suivre · R ou Entrée miser · 1–8 tailles · ↑↓ ajuster (Maj = 1 BB) · A tapis' : undefined}
+        title={keyboard ? 'Clavier : F se coucher · C parole/suivre · R ou Entrée miser · 1–3 tailles · ↑↓ ajuster (Maj = 1 BB) · A tapis' : undefined}
       >
         <div className="md:col-start-1 md:max-w-[440px] md:justify-self-end md:pr-3">{sizing}</div>
         <div className="md:col-start-3 md:w-full md:max-w-[440px] md:pl-3">{buttons}</div>
@@ -265,25 +267,42 @@ function Kbd({ children }: { children: React.ReactNode }) {
   return <kbd className="hidden rounded border border-current/30 bg-black/25 px-1 font-sans text-[9px] font-semibold opacity-60 md:inline">{children}</kbd>;
 }
 
-/** Taille de mise prédéfinie, dessinée comme un jeton de casino. */
-function SizeChip({ label, active, danger, onClick, hint }: { label: string; active: boolean; danger?: boolean; onClick: () => void; hint?: string }) {
-  const edge = danger ? '#e05561' : '#ecc977';
+/** Couleurs de jetons de casino : une par taille de mise. */
+interface ChipColor { body: string; dark: string; stripe: string; text: string; glow: string }
+const CHIP_COLORS: ChipColor[] = [
+  { body: '#2f6fd6', dark: '#173d82', stripe: '#f4f6fb', text: '#ffffff', glow: 'rgba(79,143,247,0.7)' }, // bleu
+  { body: '#1f9d5c', dark: '#0d5a33', stripe: '#f4f6fb', text: '#ffffff', glow: 'rgba(60,207,142,0.7)' }, // vert
+  { body: '#7b3fc4', dark: '#43206e', stripe: '#f4f6fb', text: '#ffffff', glow: 'rgba(167,123,243,0.7)' }, // violet
+];
+const ALLIN_CHIP: ChipColor = { body: '#c8202f', dark: '#6e0d16', stripe: '#f6dea0', text: '#fff3cf', glow: 'rgba(224,85,97,0.8)' }; // rouge et or
+
+/** Taille de mise prédéfinie, dessinée comme un vrai jeton de casino coloré. */
+function SizeChip({ label, color, active, onClick, hint }: { label: string; color: ChipColor; active: boolean; onClick: () => void; hint?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={hint}
-      className={cx('group relative flex h-10 w-10 shrink-0 items-center md:h-11 md:w-11 justify-center rounded-full transition active:scale-95', active ? 'scale-105' : 'opacity-80 hover:opacity-100')}
+      className={cx('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 md:h-12 md:w-12', active ? '-translate-y-0.5 scale-110' : 'opacity-85 hover:-translate-y-0.5 hover:opacity-100')}
       style={{
-        background: `radial-gradient(circle, ${active ? (danger ? '#5c1520' : '#2a2110') : '#0d1018'} 0 54%, transparent 55%), repeating-conic-gradient(${edge} 0 20deg, ${active ? '#0b0d12' : '#1b1f29'} 20deg 45deg)`,
-        boxShadow: active ? `0 0 0 2px ${edge}, 0 0 14px ${danger ? 'rgba(224,85,97,0.6)' : 'rgba(236,201,119,0.55)'}` : '0 2px 6px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.06)',
+        background: [
+          // centre légèrement bombé
+          `radial-gradient(circle at 50% 40%, ${color.body} 0 46%, ${color.dark} 47% 52%, transparent 53%)`,
+          // anneau intérieur pointillé
+          `repeating-conic-gradient(from 11deg, ${color.stripe}cc 0 6deg, transparent 6deg 30deg)`,
+          // bord : alternance couleur / bandes blanches
+          `repeating-conic-gradient(${color.body} 0 30deg, ${color.stripe} 30deg 45deg)`,
+        ].join(', '),
+        boxShadow: active
+          ? `0 0 0 2px #fff3cf, 0 0 16px ${color.glow}, 0 4px 8px rgba(0,0,0,0.6)`
+          : `0 3px 0 ${color.dark}, 0 5px 10px rgba(0,0,0,0.55)`,
       }}
     >
-      <span className={cx('flex flex-col items-center px-0.5 text-center text-[10px] font-extrabold leading-none tracking-tight', active ? (danger ? 'text-[#ffb3ba]' : 'text-gold-300') : 'text-white/85')}>
+      <span className="flex flex-col items-center text-center text-[11px] font-extrabold leading-none tracking-tight drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]" style={{ color: color.text }}>
         {/ BB$/.test(label) ? (
           <>
             {label.replace(/ BB$/, '')}
-            <span className="mt-px text-[7px] font-bold opacity-70">BB</span>
+            <span className="mt-px text-[7px] font-bold opacity-80">BB</span>
           </>
         ) : label.replace(' %', '%')}
       </span>
