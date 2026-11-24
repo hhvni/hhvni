@@ -158,7 +158,7 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
         </div>
       </div>
       {feltTheme === 'black' && (
-        <FeltDecor n={n} rotation={rotation} insetX={narrow ? 0.06 : 0.07} insetY={narrow ? 0.07 : 0.09} feltInset={narrow ? 10 : 14} seatRx={rx} seatRy={ry} />
+        <FeltDecor n={n} rotation={rotation} insetX={narrow ? 0.06 : 0.07} insetY={narrow ? 0.07 : 0.09} feltInset={narrow ? 10 : 14} seatRx={rx} seatRy={ry} occupied={state.seats.map(Boolean)} />
       )}
 
       {/* Centre : pot + board */}
@@ -531,15 +531,15 @@ function Seat({
       </button>
 
       {/* Plaque nom + tapis */}
-      <div className={cx('relative -mt-2 min-w-[84px] rounded-lg bg-gradient-to-b from-night-700/95 to-night-900/95 px-2.5 py-1 text-center shadow-lg ring-1 sm:min-w-[104px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
-        <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && <span title={seat.botStyle ? `Robot « ${seat.botStyle.label} » : ${seat.botStyle.description}` : 'Robot'}>{seat.botStyle?.emoji ?? '🤖'} </span>}{seat.username}</div>
+      <div className={cx('relative -mt-2 min-w-[64px] rounded-md bg-gradient-to-b from-night-700/95 to-night-900/95 px-2 py-0.5 text-center shadow-lg ring-1 sm:min-w-[78px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
+        <div className="max-w-[78px] truncate text-[10px] font-medium leading-tight text-ink/80 sm:max-w-[96px] sm:text-[11px]" title={seat.username}>{seat.isBot && <span title={seat.botStyle ? `Robot « ${seat.botStyle.label} » : ${seat.botStyle.description}` : 'Robot'}>{seat.botStyle?.emoji ?? '🤖'} </span>}{seat.isBot ? seat.username.replace(/^Robot /, '') : seat.username}</div>
         <button
           type="button"
           onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
           title={bbMode ? 'Afficher en jetons' : 'Afficher en grosses blindes'}
           className="block w-full cursor-pointer text-[11px] font-bold leading-tight tabular text-gold-300 hover:brightness-125 sm:text-[13px]"
         >
-          {seat.allIn && seat.inHand ? 'TAPIS' : money(seat.stack)}
+          {seat.allIn && seat.inHand ? 'TAPIS' : <Amount text={money(seat.stack)} />}
         </button>
         {note && (note.color !== 'none' || note.text) && (
           <span
@@ -587,9 +587,7 @@ function Seat({
             <Badge tone="gold">Rebuy ?</Badge>
           ) : seat.sittingOut ? (
             <Badge>Absent</Badge>
-          ) : seat.folded && !seat.lastAction && state.street ? (
-            <span className="rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-faint">Couché</span>
-          ) : seat.lastAction ? (
+          ) : seat.lastAction && seat.lastAction !== 'Couché' ? (
             <motion.span key={seat.lastAction} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className={cx('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-md', actionTone(seat.lastAction))}>
               {(() => {
                 const m = /^(Mise|Relance) (.+)$/.exec(seat.lastAction);
@@ -634,6 +632,13 @@ function DealerButton({ index, n, rx, ry }: { index: number; n: number; rx: numb
       D
     </motion.div>
   );
+}
+
+/** Montant avec l'unité « BB » en petit (plus lisible, moins encombrant). */
+function Amount({ text }: { text: string }) {
+  const m = /^(.*) BB$/.exec(text);
+  if (!m) return <>{text}</>;
+  return <>{m[1]}<span className="ml-0.5 text-[0.72em] font-semibold opacity-70">BB</span></>;
 }
 
 /** Couleur de l'étiquette de dernière action. */

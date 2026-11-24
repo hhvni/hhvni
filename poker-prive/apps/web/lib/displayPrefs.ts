@@ -59,9 +59,10 @@ export function useDisplayPrefs(): DisplayPrefs {
 export const BigBlindContext = createContext<number | null>(null);
 
 /** Formate un nombre de grosses blindes : 0,5 BB · 1 BB · 24,5 BB · 100 BB. */
-export function formatBB(chips: number, bb: number): string {
+export function formatBB(chips: number, bb: number, precise = false): string {
   const v = chips / bb;
-  return `${v.toLocaleString('fr-FR', { maximumFractionDigits: Math.abs(v) < 10 ? 2 : 1 })} BB`;
+  // Moins de 10 BB : au dixième (0,5 BB · 7,5 BB) ; au-delà : arrondi (65 BB · 258 BB)
+  return `${v.toLocaleString('fr-FR', { maximumFractionDigits: precise ? (Math.abs(v) < 10 ? 2 : 1) : Math.abs(v) < 10 ? 1 : 0 })} BB`;
 }
 
 /**

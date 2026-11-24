@@ -213,7 +213,7 @@ export function ActionBar({ state, onAction }: Props) {
                 aria-label="Montant exact"
               />
               <span className="hidden w-[4.5rem] shrink-0 text-right text-[11px] leading-tight tabular text-muted sm:block">
-                {formatBB(amount, bb)}
+                {formatBB(amount, bb, true)}
                 <br />
                 <span className="text-faint">{potShare} % du pot</span>
               </span>

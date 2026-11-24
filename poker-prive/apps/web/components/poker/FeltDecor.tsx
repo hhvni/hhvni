@@ -52,9 +52,11 @@ const SPARKS = Array.from({ length: 70 }, (_, i) => {
 });
 
 export function FeltDecor({
-  n, rotation, insetX, insetY, feltInset, seatRx, seatRy,
+  n, rotation, insetX, insetY, feltInset, seatRx, seatRy, occupied,
 }: {
   n: number;
+  /** Sièges occupés (par numéro de siège) : leur numéro n'est pas affiché. */
+  occupied?: boolean[];
   rotation: number;
   /** Retraits du rail en fraction du conteneur */
   insetX: number;
@@ -146,7 +148,7 @@ export function FeltDecor({
             ))}
 
             {/* Numéros des places */}
-            {g.labels.map((l, i) => (
+            {g.labels.map((l, i) => occupied?.[(i + rotation) % n] ? null : (
               <text key={i} x={l.x} y={l.y} textAnchor="middle" dominantBaseline="central" fill="rgba(255,255,255,0.55)" fontSize={Math.max(14, Math.min(26, g.felt.h * 0.06))} fontFamily="var(--font-display), Georgia, serif" fontWeight="700">
                 {l.t}
               </text>
