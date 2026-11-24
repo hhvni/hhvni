@@ -259,7 +259,7 @@ function Game({ gameId }: { gameId: string }) {
       </AnimatePresence>
 
       <SitModal seat={sitSeat} state={state} onClose={() => setSitSeat(null)} run={run} />
-      <VideoSettings open={videoOpen} onClose={() => setVideoOpen(false)} video={video} prefs={prefs} setPrefs={setPrefs} />
+      <VideoSettings open={videoOpen} onClose={() => setVideoOpen(false)} video={video} prefs={prefs} setPrefs={setPrefs} names={Object.fromEntries(state.seats.filter((x): x is PublicSeat => !!x).map((x) => [x.userId, x.username]))} />
       <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} gameId={gameId} />
       <SeatMenu seat={menuSeat} state={state} onClose={() => setMenuSeat(null)} run={run} />
       <RebuyPrompt state={state} run={run} now={now} />
@@ -592,7 +592,7 @@ function RebuyPrompt({ state, run, now }: { state: GameView; run: Run; now: () =
   );
 }
 
-function VideoSettings({ open, onClose, video, prefs, setPrefs }: { open: boolean; onClose: () => void; video: VideoChat; prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void }) {
+function VideoSettings({ open, onClose, video, prefs, setPrefs, names }: { open: boolean; onClose: () => void; video: VideoChat; prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void; names: Record<string, string> }) {
   useEffect(() => {
     if (open) void video.refreshDevices();
   }, [open, video]);
@@ -624,6 +624,7 @@ function VideoSettings({ open, onClose, video, prefs, setPrefs }: { open: boolea
           <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">Taille des vignettes</span>
           <Tabs value={String(prefs.videoSize)} onChange={(v) => setPrefs({ videoSize: Number(v) })} items={[{ value: '52', label: 'Petite' }, { value: '64', label: 'Moyenne' }, { value: '84', label: 'Grande' }, { value: '104', label: 'Très grande' }]} />
         </div>
+        <VideoDiagnostics video={video} names={names} />
         <div className="space-y-1 border-t border-white/6 pt-3">
           <Toggle label="Afficher la vidéo des autres joueurs" checked={prefs.showRemote} onChange={(v) => setPrefs({ showRemote: v })} />
           <Toggle label="Sons de la table" hint="Jetons, cartes, « à vous de jouer », tic-tac des 5 dernières secondes" checked={prefs.sound} onChange={(v) => setPrefs({ sound: v })} />
@@ -714,5 +715,32 @@ function RunoutPrompt({ state, run, now }: { state: GameView; run: Run; now: () 
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** État de la liaison vidéo avec chaque joueur, pour comprendre un problème. */
+function VideoDiagnostics({ video, names }: { video: VideoChat; names: Record<string, string> }) {
+  const label = { connecting: ['Connexion…', 'text-gold-300'], direct: ['Connecté (direct)', 'text-success'], relay: ['Connecté (via relais)', 'text-success'], failed: ['Bloqué par le réseau', 'text-danger'] } as const;
+  const active = video.remote.filter((r) => r.cam || r.mic);
+  return (
+    <div className="rounded-xl bg-white/[0.03] p-3 text-xs ring-1 ring-white/6">
+      <div className="mb-1.5 font-semibold uppercase tracking-wider text-muted">Diagnostic vidéo</div>
+      {active.length === 0 ? (
+        <p className="text-faint">Aucun autre joueur n&apos;a activé sa caméra ou son micro pour l&apos;instant.</p>
+      ) : (
+        <ul className="space-y-1">
+          {active.map((r) => (
+            <li key={r.userId} className="flex justify-between gap-2">
+              <span className="truncate text-ink">{names[r.userId] ?? 'Spectateur'}</span>
+              <span className={label[r.state][1]}>{label[r.state][0]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-faint">
+        Serveur relais (TURN) : {video.hasTurn ? <span className="text-success">configuré</span> : <span className="text-gold-300">non configuré</span>}
+        {!video.hasTurn && ' — si la vidéo reste « bloquée par le réseau » entre deux maisons, il en faut un (voir le guide).'}
+      </p>
+    </div>
   );
 }

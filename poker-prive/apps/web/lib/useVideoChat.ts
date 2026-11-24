@@ -25,13 +25,18 @@ interface PeerState {
   cam: boolean;
   mic: boolean;
   senders: { audio?: RTCRtpSender; video?: RTCRtpSender };
+  state: PeerLink;
 }
+
+/** État de la liaison vidéo avec un joueur (pour le diagnostic affiché). */
+export type PeerLink = 'connecting' | 'direct' | 'relay' | 'failed';
 
 export interface RemoteMedia {
   userId: string;
   stream: MediaStream;
   cam: boolean;
   mic: boolean;
+  state: PeerLink;
 }
 
 const isMobile = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
@@ -55,13 +60,14 @@ export function useVideoChat(gameId: string, enabled: boolean) {
   const [micId, setMicId] = useState<string | undefined>();
   const [speaking, setSpeaking] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [hasTurn, setHasTurn] = useState(false);
   const audioCtx = useRef<AudioContext | null>(null);
   const analysers = useRef(new Map<string, { an: AnalyserNode; src: MediaStreamAudioSourceNode; trackId: string }>());
   const camOnRef = useRef(false);
   const micOnRef = useRef(false);
 
   const publish = useCallback(() => {
-    setRemote([...peers.current.values()].map((p) => ({ userId: p.userId, stream: p.stream, cam: p.cam, mic: p.mic })));
+    setRemote([...peers.current.values()].map((p) => ({ userId: p.userId, stream: p.stream, cam: p.cam, mic: p.mic, state: p.state })));
   }, []);
 
   /** Ajuste le débit d'envoi vidéo selon le nombre de pairs. */
@@ -85,7 +91,7 @@ export function useVideoChat(gameId: string, enabled: boolean) {
     const pc = new RTCPeerConnection({ iceServers: iceServers.current, bundlePolicy: 'max-bundle' });
     const peer: PeerState = {
       socketId, userId, pc, polite: (selfId.current ?? '') < socketId, makingOffer: false, ignoreOffer: false,
-      stream: new MediaStream(), cam: false, mic: false, senders: {},
+      stream: new MediaStream(), cam: false, mic: false, senders: {}, state: 'connecting',
     };
     peers.current.set(socketId, peer);
     for (const track of local.current.getTracks()) peer.senders[track.kind as 'audio' | 'video'] = pc.addTrack(track, local.current);
@@ -104,15 +110,41 @@ export function useVideoChat(gameId: string, enabled: boolean) {
       if (e.candidate) void emit('rtc:signal', { to: socketId, data: { candidate: e.candidate.toJSON() } });
     };
     pc.ontrack = (e) => {
-      if (!peer.stream.getTracks().includes(e.track)) peer.stream.addTrack(e.track);
+      // Nouveau MediaStream à chaque piste : l'élément <video> est rebranché
+      // (certains navigateurs, dont Firefox, n'affichent pas une piste ajoutée après coup)
+      const tracks = peer.stream.getTracks().filter((t) => t.kind !== e.track.kind && t.readyState === 'live');
+      peer.stream = new MediaStream([...tracks, e.track]);
       e.track.onended = () => {
-        peer.stream.removeTrack(e.track);
+        peer.stream = new MediaStream(peer.stream.getTracks().filter((t) => t !== e.track));
         publish();
       };
+      e.track.onunmute = () => publish();
       publish();
     };
+    let restarts = 0;
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') pc.restartIce();
+      const st = pc.connectionState;
+      if (st === 'connected') {
+        // Liaison directe ou via un serveur relais (TURN) ?
+        void pc.getStats().then((stats) => {
+          let relay = false;
+          stats.forEach((r) => {
+            if (r.type === 'candidate-pair' && (r.selected || r.nominated) && r.state === 'succeeded') {
+              const local = stats.get(r.localCandidateId);
+              if (local?.candidateType === 'relay') relay = true;
+            }
+          });
+          peer.state = relay ? 'relay' : 'direct';
+          publish();
+        });
+      } else if (st === 'failed') {
+        peer.state = 'failed';
+        publish();
+        if (restarts++ < 2) pc.restartIce();
+      } else if (st === 'connecting' || st === 'new') {
+        if (peer.state !== 'failed') peer.state = 'connecting';
+        publish();
+      }
     };
     publish();
     tuneBitrates();
@@ -137,6 +169,7 @@ export function useVideoChat(gameId: string, enabled: boolean) {
       try {
         const ice = await api<{ iceServers: RTCIceServer[] }>(`/games/${gameId}/ice`);
         iceServers.current = ice.iceServers;
+        setHasTurn(ice.iceServers.some((s) => !!s.credential));
       } catch {
         iceServers.current = [];
       }
@@ -325,7 +358,7 @@ export function useVideoChat(gameId: string, enabled: boolean) {
   }, [remote]);
 
   return {
-    local: local.current, localVersion, camOn, micOn, remote, speaking, devices, camId, micId, error,
+    local: local.current, localVersion, camOn, micOn, remote, speaking, devices, camId, micId, error, hasTurn,
     enableCam, enableMic, refreshDevices, ensureAudioCtx,
   };
 }

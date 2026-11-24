@@ -32,8 +32,9 @@ export function StreamAudio({ stream }: { stream: MediaStream }) {
  * Indicateurs micro coupé / caméra coupée, halo quand il parle.
  */
 export function VideoTile({
-  name, avatarUrl, stream, camOn, micOn, speaking, size, isLocal, version, rtcActive,
+  name, avatarUrl, stream, camOn, micOn, speaking, size, isLocal, version, rtcActive, link,
 }: {
+  link?: 'connecting' | 'direct' | 'relay' | 'failed';
   name: string;
   avatarUrl: string | null;
   stream: MediaStream | null;
@@ -62,6 +63,14 @@ export function VideoTile({
           </motion.div>
         )}
       </AnimatePresence>
+      {link === 'connecting' && (camOn || micOn) && (
+        <span className="absolute right-0.5 top-0.5 h-3 w-3 animate-pulse rounded-full bg-gold-400 ring-2 ring-night-900" title="Connexion vidéo en cours…" />
+      )}
+      {link === 'failed' && (camOn || micOn) && (
+        <span className="absolute inset-x-0 bottom-0 bg-danger/90 py-0.5 text-center text-[8px] font-bold leading-tight text-white" title="La vidéo ne passe pas entre vos deux réseaux : un serveur relais (TURN) est nécessaire">
+          ⚠ réseau
+        </span>
+      )}
       {rtcActive && (camOn || micOn) && !micOn && (
         <span className="absolute bottom-0.5 left-1/2 flex h-4 w-4 -translate-x-1/2 items-center justify-center rounded-full bg-danger text-white" title="Micro coupé">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><path d="M3 3l18 18M9 9v3a3 3 0 0 0 5 2.2M15 10V5a3 3 0 0 0-5.7-1.3M19 11a7 7 0 0 1-1.2 3.9M5 11a7 7 0 0 0 11 5.7M12 19v3" /></svg>

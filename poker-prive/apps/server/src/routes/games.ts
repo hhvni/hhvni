@@ -83,7 +83,10 @@ gamesRouter.get('/:id/ice', ah(async (req, res) => {
   const stun = env.STUN_URLS.split(',').map((s) => s.trim()).filter(Boolean);
   if (stun.length) iceServers.push({ urls: stun });
   const turn = env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean);
-  if (turn.length && env.TURN_SECRET) {
+  if (turn.length && env.TURN_USERNAME && env.TURN_CREDENTIAL) {
+    // Service TURN hébergé avec identifiants fixes
+    iceServers.push({ urls: turn, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL });
+  } else if (turn.length && env.TURN_SECRET) {
     const username = `${Math.floor(Date.now() / 1000) + 3600}:${req.user!.id}`;
     const credential = createHmac('sha1', env.TURN_SECRET).update(username).digest('base64');
     iceServers.push({ urls: turn, username, credential });

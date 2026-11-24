@@ -28,6 +28,9 @@ const EnvSchema = z.object({
   STUN_URLS: z.string().default('stun:stun.l.google.com:19302'),
   TURN_URLS: z.string().default(''),
   TURN_SECRET: z.string().default(''),
+  /** Identifiants fixes d'un service TURN hébergé (ex. Metered, Twilio, Cloudflare). */
+  TURN_USERNAME: z.string().default(''),
+  TURN_CREDENTIAL: z.string().default(''),
   UPLOAD_DIR: z.string().default('./uploads'),
   LOG_LEVEL: z.string().default('info'),
   SERVE_WEB: z.enum(['0', '1']).default('1'),

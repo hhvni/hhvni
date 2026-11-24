@@ -237,6 +237,23 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
         }))}
       </AnimatePresence>
 
+      {/* Caméras des spectateurs (joueurs non assis) */}
+      {showRemoteVideo && (() => {
+        const seated = new Set(state.seats.filter(Boolean).map((x) => x!.userId));
+        const watchers = video.remote.filter((r) => !seated.has(r.userId) && (r.cam || r.mic));
+        if (watchers.length === 0) return null;
+        return (
+          <div className="absolute left-1 top-1 z-30 flex max-w-[60%] flex-wrap gap-2 rounded-xl bg-black/40 p-1.5 backdrop-blur" aria-label="Spectateurs en vidéo">
+            {watchers.map((r) => (
+              <div key={r.userId} className="flex flex-col items-center">
+                <VideoTile name="?" avatarUrl={null} stream={r.stream} camOn={r.cam} micOn={r.mic} speaking={video.speaking.has(r.userId)} size={Math.round(videoSize * 0.8)} rtcActive link={r.state} />
+                <span className="mt-0.5 text-[9px] text-muted">Spectateur</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Sièges */}
       {seatsList.map(({ s, i }) => {
         const p = ellipse(displayIndex(i), n, rx, ry);
@@ -390,6 +407,7 @@ function Seat({
           isLocal={isMe}
           version={isMe ? video.localVersion : undefined}
           rtcActive={isMe ? video.camOn || video.micOn : !!remote}
+          link={isMe ? undefined : remote?.state}
         />
         {!seat.connected && <span className="absolute -right-1 -top-1 rounded-full bg-night-900 px-1 text-[10px]" title="Déconnecté">📡</span>}
         <AnimatePresence>
