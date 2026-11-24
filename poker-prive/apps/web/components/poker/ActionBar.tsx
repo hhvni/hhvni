@@ -7,7 +7,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GameView, LegalActions } from '@poker/engine';
-import { fmt } from '@/lib/format';
+import { formatBB, useMoney } from '@/lib/displayPrefs';
 import { cx } from '../ui';
 
 export type PreAction = 'checkFold' | 'check' | 'callAny' | null;
@@ -38,6 +38,7 @@ export function ActionBar({ state, onAction }: Props) {
   const l = state.me.legal;
   const bb = state.tournament?.bigBlind ?? state.config.bigBlind;
   const [amount, setAmount] = useState(0);
+  const money = useMoney();
   const [busy, setBusy] = useState(false);
   const [pre, setPre] = useState<PreAction>(null);
   const lastSeq = useRef(-1);
@@ -102,7 +103,7 @@ export function ActionBar({ state, onAction }: Props) {
     <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mx-auto w-full max-w-3xl space-y-2.5 px-1">
       {simple && (
         <p className="text-center text-xs text-muted">
-          {l.canCheck ? 'Personne n’a misé : vous pouvez checker (parole) gratuitement ou miser.' : `Pour rester dans le coup, suivez ${fmt(l.callAmount)} jetons. Sinon couchez-vous.`}
+          {l.canCheck ? 'Personne n’a misé : vous pouvez checker (parole) gratuitement ou miser.' : `Pour rester dans le coup, suivez ${money(l.callAmount, true)}. Sinon couchez-vous.`}
         </p>
       )}
       {canAggro && !allInOnly && (
@@ -142,6 +143,7 @@ export function ActionBar({ state, onAction }: Props) {
               onBlur={() => setAmount((a) => Math.max(l.minTo, Math.min(l.maxTo, Math.round(a) || l.minTo)))}
               aria-label="Montant exact"
             />
+            <span className="hidden w-16 shrink-0 text-right text-[11px] tabular text-muted sm:block" title="En grosses blindes">{formatBB(amount, bb)}</span>
           </div>
         </div>
       )}
@@ -153,17 +155,17 @@ export function ActionBar({ state, onAction }: Props) {
           <ActionButton tone="call" onClick={() => act('check')} disabled={busy}>Parole</ActionButton>
         ) : (
           <ActionButton tone="call" onClick={() => act('call')} disabled={busy}>
-            {l.callAmount >= l.stack ? 'Tapis' : 'Suivre'} <span className="tabular">{fmt(l.callAmount)}</span>
+            {l.callAmount >= l.stack ? 'Tapis' : 'Suivre'} <span className="tabular">{money(l.callAmount, true)}</span>
           </ActionButton>
         )}
         {canAggro ? (
           allInOnly || amount >= l.maxTo ? (
             <ActionButton tone="allin" onClick={() => act('allin')} disabled={busy}>
-              Tapis <span className="tabular">{fmt(l.maxTo)}</span>
+              Tapis <span className="tabular">{money(l.maxTo, true)}</span>
             </ActionButton>
           ) : (
             <ActionButton tone="raise" onClick={() => act(l.canBet ? 'bet' : 'raise', Math.max(l.minTo, Math.min(l.maxTo, Math.round(amount))))} disabled={busy}>
-              {l.canBet ? 'Miser' : 'Relancer à'} <span className="tabular">{fmt(amount)}</span>
+              {l.canBet ? 'Miser' : 'Relancer à'} <span className="tabular">{money(amount, true)}</span>
             </ActionButton>
           )
         ) : (

@@ -59,7 +59,7 @@ export default function Home() {
               <div className="absolute inset-0 flex items-center justify-center gap-1.5">
                 {(['Ah', 'Kh', 'Qh', 'Jh', 'Th'] as const).map((c, i) => (
                   <motion.div key={c} initial={{ y: -40, opacity: 0, rotateY: 180 }} animate={{ y: 0, opacity: 1, rotateY: 0 }} transition={{ delay: 0.4 + i * 0.12, type: 'spring', damping: 16 }}>
-                    <PlayingCard card={c} size="md" />
+                    <PlayingCard card={c} size="lg" />
                   </motion.div>
                 ))}
               </div>

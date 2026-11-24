@@ -1,6 +1,6 @@
 'use client';
 import { motion } from 'framer-motion';
-import { compact } from '@/lib/format';
+import { useMoney } from '@/lib/displayPrefs';
 import { cx } from '../ui';
 
 /** Dénominations et couleurs des jetons (inspirées des standards de casino). */
@@ -50,6 +50,7 @@ export function Chip({ color, edge, size = 18 }: { color: string; edge: string; 
 /** Pile de jetons + montant (mise devant un joueur, pot…). */
 export function ChipStack({ amount, size = 18, label = true, className, vertical }: { amount: number; size?: number; label?: boolean; className?: string; vertical?: boolean }) {
   const chips = breakdown(amount);
+  const money = useMoney();
   return (
     <motion.div
       layout
@@ -66,7 +67,7 @@ export function ChipStack({ amount, size = 18, label = true, className, vertical
           </div>
         ))}
       </div>
-      {label && <span className="rounded-full bg-black/55 px-2 py-0.5 text-xs font-semibold tabular text-ink ring-1 ring-white/10">{compact(amount)}</span>}
+      {label && <span className="rounded-full bg-black/55 px-2 py-0.5 text-xs font-semibold tabular text-ink ring-1 ring-white/10">{money(amount)}</span>}
     </motion.div>
   );
 }

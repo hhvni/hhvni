@@ -6,7 +6,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { evaluateBest, isCard, type Card, type GameView, type PublicSeat } from '@poker/engine';
-import { compact, fmt } from '@/lib/format';
+import { useMoney } from '@/lib/displayPrefs';
 import type { Reaction } from '@/lib/useGame';
 import type { VideoChat } from '@/lib/useVideoChat';
 import { Badge, cx } from '../ui';
@@ -200,19 +200,20 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
 }
 
 function PotsDisplay({ state }: { state: GameView }) {
+  const money = useMoney();
   if (state.totalPot <= 0) return <div className="h-7" />;
   const pots = state.pots;
   return (
     <div className="flex flex-col items-center gap-1">
       <div className="rounded-full bg-black/45 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/10 sm:text-sm">
-        Pot <span className="tabular text-gold-300">{fmt(state.totalPot)}</span>
+        Pot <span className="tabular text-gold-300">{money(state.totalPot, true)}</span>
       </div>
       {pots.length > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-2">
           {pots.map((p, i) => (
             <div key={i} className="flex items-center gap-1" title={i === 0 ? 'Pot principal' : `Pot secondaire ${i}`}>
               <ChipStack amount={p.amount} size={14} label={false} />
-              <span className="text-[11px] font-semibold tabular text-white/80">{i === 0 ? 'Principal' : `Side ${i}`} {compact(p.amount)}</span>
+              <span className="text-[11px] font-semibold tabular text-white/80">{i === 0 ? 'Principal' : `Side ${i}`} {money(p.amount)}</span>
             </div>
           ))}
         </div>
@@ -260,6 +261,7 @@ function Seat({
   onMenu?: (s: PublicSeat) => void;
   bottom: boolean;
 }) {
+  const money = useMoney();
   const turn = state.turn?.userId === seat.userId ? state.turn : null;
   const remote = video.remote.find((r) => r.userId === seat.userId);
   const size = Math.round(videoSize * (narrow ? 0.72 : 1) * (isMe && narrow ? 1.05 : 1));
@@ -319,7 +321,7 @@ function Seat({
       <div className={cx('relative -mt-2 min-w-[84px] rounded-lg bg-gradient-to-b from-night-700/95 to-night-900/95 px-2.5 py-1 text-center shadow-lg ring-1 sm:min-w-[104px]', turn ? 'ring-gold-400/70' : 'ring-white/10')}>
         <div className="max-w-[96px] truncate text-[11px] font-semibold leading-tight text-ink sm:max-w-[120px] sm:text-xs">{seat.isBot && '🤖 '}{seat.username}</div>
         <div className="text-[11px] font-bold leading-tight tabular text-gold-300 sm:text-[13px]">
-          {seat.allIn && seat.inHand ? 'TAPIS' : compact(seat.stack)}
+          {seat.allIn && seat.inHand ? 'TAPIS' : money(seat.stack)}
         </div>
         <div className="absolute -right-2 -top-2 flex gap-0.5">
           {seat.isSmallBlind && <span className="rounded bg-info/90 px-1 text-[9px] font-bold text-white">SB</span>}
@@ -338,7 +340,10 @@ function Seat({
             <Badge>Absent</Badge>
           ) : seat.lastAction ? (
             <motion.span key={seat.lastAction} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className={cx('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', seat.lastAction === 'Tapis' ? 'bg-danger text-white' : seat.lastAction === 'Couché' ? 'bg-black/60 text-muted' : 'bg-black/60 text-ink')}>
-              {seat.lastAction}
+              {(() => {
+                const m = /^(Mise|Relance) (.+)$/.exec(seat.lastAction);
+                return m ? `${m[1]} ${money(Number(m[2]!.replace(/\D/g, '')), true)}` : seat.lastAction;
+              })()}
             </motion.span>
           ) : null}
         </AnimatePresence>

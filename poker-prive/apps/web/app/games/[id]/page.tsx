@@ -9,6 +9,7 @@ import { useRequireAuth } from '@/lib/auth';
 import { emit } from '@/lib/socket';
 import { fmt, mmss } from '@/lib/format';
 import { useGame } from '@/lib/useGame';
+import { BigBlindContext, setDisplayPrefs, useDisplayPrefs } from '@/lib/displayPrefs';
 import { useVideoChat, type VideoChat } from '@/lib/useVideoChat';
 import { TableView } from '@/components/poker/TableView';
 import { ActionBar } from '@/components/poker/ActionBar';
@@ -115,7 +116,14 @@ function Game({ gameId }: { gameId: string }) {
     );
   }
   if (!state) return <PageLoader />;
+  return (
+    <BigBlindContext.Provider value={state.tournament?.bigBlind ?? state.config.bigBlind}>
+      {renderGame()}
+    </BigBlindContext.Provider>
+  );
 
+  function renderGame() {
+  if (!state) return null;
   const mySeat = state.me.seat >= 0 ? (state.seats[state.me.seat] ?? null) : null;
   const isAdmin = state.me.isRoomAdmin;
   const t = state.tournament;
@@ -144,6 +152,7 @@ function Game({ gameId }: { gameId: string }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <BBToggle />
           <IconButton title={video.micOn ? 'Couper le micro' : 'Activer le micro'} active={video.micOn} onClick={() => void video.enableMic(!video.micOn)}>
             {video.micOn ? <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" /> : <path d="M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.6M17 16.9A7 7 0 0 1 5 12v-2M19 10v2a7 7 0 0 1-.1 1.2M12 19v3" />}
           </IconButton>
@@ -216,6 +225,22 @@ function Game({ gameId }: { gameId: string }) {
       <RebuyPrompt state={state} run={run} now={now} />
       {video.error && <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-danger/90 px-4 py-2 text-sm text-white">{video.error}</div>}
     </div>
+  );
+  }
+}
+
+/** Bascule jetons ↔ grosses blindes. */
+function BBToggle() {
+  const { bbMode } = useDisplayPrefs();
+  return (
+    <button
+      onClick={() => setDisplayPrefs({ bbMode: !bbMode })}
+      title={bbMode ? 'Afficher les montants en jetons' : 'Afficher les montants en grosses blindes'}
+      aria-label={bbMode ? 'Afficher les montants en jetons' : 'Afficher les montants en grosses blindes'}
+      className={cx('rounded-lg px-2 py-1.5 text-xs font-bold transition', bbMode ? 'bg-gold-400/20 text-gold-300 ring-1 ring-gold-400/50' : 'text-muted ring-1 ring-white/10 hover:text-ink')}
+    >
+      BB
+    </button>
   );
 }
 
@@ -503,6 +528,7 @@ function VideoSettings({ open, onClose, video, prefs, setPrefs }: { open: boolea
         <div className="space-y-1 border-t border-white/6 pt-3">
           <Toggle label="Afficher la vidéo des autres joueurs" checked={prefs.showRemote} onChange={(v) => setPrefs({ showRemote: v })} />
           <Toggle label="Son « à vous de jouer »" checked={prefs.sound} onChange={(v) => setPrefs({ sound: v })} />
+          <DisplayToggles />
         </div>
         <div>
           <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">Tapis</span>
@@ -541,5 +567,15 @@ function HistoryModal({ open, onClose, gameId }: { open: boolean; onClose: () =>
         </ul>
       )}
     </Modal>
+  );
+}
+
+function DisplayToggles() {
+  const d = useDisplayPrefs();
+  return (
+    <>
+      <Toggle label="Montants en grosses blindes" hint="Ex. 50 → 0,5 BB · 100 → 1 BB (aussi via le bouton BB en haut)" checked={d.bbMode} onChange={(v) => setDisplayPrefs({ bbMode: v })} />
+      <Toggle label="Jeu 4 couleurs" hint="Carreaux bleus et trèfles verts, plus lisible ; sinon jeu classique rouge et noir" checked={d.fourColor} onChange={(v) => setDisplayPrefs({ fourColor: v })} />
+    </>
   );
 }
