@@ -1,5 +1,11 @@
 /** Client de test : HTTP (fetch + cookie) et Socket.IO, comme un vrai navigateur. */
 import { io, type Socket } from 'socket.io-client';
+import { prisma } from '../src/db.js';
+
+/** Repart d'une base vide (chaque fichier de test est indépendant). */
+export async function resetDb(): Promise<void> {
+  await prisma.$executeRawUnsafe('TRUNCATE "User", "Room", "AuditLog" CASCADE');
+}
 import type { GameView } from '@poker/engine';
 
 export class TestClient {

@@ -83,7 +83,7 @@ export interface HandPlayer {
 export type HandEvent =
   | { type: 'handStart'; handNumber: number; buttonSeat: number; sbSeat: number; bbSeat: number; smallBlind: number; bigBlind: number; ante: number; players: { playerId: string; name: string; seat: number; stack: number }[] }
   | { type: 'ante'; playerId: string; amount: number; allIn: boolean }
-  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb' | 'post' | 'dead' | 'straddle'; amount: number; allIn: boolean }
+  | { type: 'blind'; playerId: string; kind: 'sb' | 'bb' | 'post' | 'dead' | 'straddle' | 'bomb'; amount: number; allIn: boolean }
   | { type: 'holeCards'; count: number }
   | { type: 'action'; street: Street; playerId: string; action: ActionType; amount: number; to: number; allIn: boolean }
   | { type: 'street'; street: Street; cards: Card[]; board: Card[] }
@@ -124,6 +124,8 @@ export interface HandState {
   runFrom?: number;
   /** Second board (run it twice). */
   board2?: Card[];
+  /** Montant du straddle général (bomb pot) de cette main. */
+  bombPot?: number;
 }
 
 export interface LegalActions {
@@ -287,7 +289,11 @@ export class PokerTable {
    * @param rand source d'aléa cryptographique (injectée par le serveur)
    * @param presetDeck uniquement pour les tests : ordre exact des cartes
    */
-  startHand(rand: RandomInt = secureRandomInt, presetDeck?: Card[]): HandState {
+  /**
+   * @param opts.bombPot « straddle général » (bomb pot) : chaque joueur pose ce
+   *   montant, pas d'enchères avant le flop, le jeu reprend au flop.
+   */
+  startHand(rand: RandomInt = secureRandomInt, presetDeck?: Card[], opts: { bombPot?: number } = {}): HandState {
     if (this.hand && !this.hand.finished) throw new PokerError('HAND_IN_PROGRESS', 'Une main est déjà en cours');
     const plan = this.planHand();
     if (!plan) throw new PokerError('NOT_ENOUGH_PLAYERS', 'Il faut au moins deux joueurs');
@@ -324,6 +330,28 @@ export class PokerTable {
       players: players.map((p) => ({ playerId: p.playerId, name: p.name, seat: p.seat, stack: p.stack })),
     });
 
+    const bomb = opts.bombPot && opts.bombPot > 0 ? opts.bombPot : 0;
+    hand.bombPot = bomb || undefined;
+    if (bomb) {
+      // Straddle général : tout le monde pose le même montant, directement au pot
+      for (const p of this.orderFrom(this.buttonSeat)) {
+        const amt = Math.min(bomb, p.stack);
+        p.stack -= amt;
+        p.totalBet += amt;
+        if (p.stack === 0) p.allIn = true;
+        hand.events.push({ type: 'blind', playerId: p.playerId, kind: 'bomb', amount: amt, allIn: p.allIn });
+      }
+      for (const seat of eligible) {
+        const info = this.seats[seat]!;
+        info.waitBB = false;
+        info.postNow = false;
+        info.missedBB = false;
+        info.missedSB = false;
+      }
+      hand.currentBet = 0;
+      hand.lastFullRaise = bigBlind;
+      hand.straddleSeat = null;
+    } else {
     // Antes (argent mort, ne compte pas dans la mise du tour)
     if (ante > 0) {
       for (const p of this.orderFrom(this.buttonSeat)) {
@@ -375,6 +403,7 @@ export class PokerTable {
         hand.straddleSeat = utg.seat;
       }
     }
+    }
 
     // Distribution : une carte à la fois, en commençant à gauche du bouton
     const dealOrder = this.orderFrom(this.buttonSeat);
@@ -383,7 +412,13 @@ export class PokerTable {
     hand.deck = drain(deck);
 
     // Premier à parler : après la BB (en heads-up : le bouton/SB)
-    hand.toActSeat = this.firstToActAfter(hand.straddleSeat ?? bbSeat);
+    if (bomb) {
+      // Pas d'enchères préflop : le tour est considéré comme terminé, place au flop
+      for (const p of hand.players) p.hasActed = true;
+      hand.toActSeat = null;
+    } else {
+      hand.toActSeat = this.firstToActAfter(hand.straddleSeat ?? bbSeat);
+    }
     this.progress();
     return hand;
   }

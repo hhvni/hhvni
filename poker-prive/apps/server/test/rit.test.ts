@@ -3,15 +3,17 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { GameView } from '@poker/engine';
 import { prisma } from '../src/db.js';
 import { startServer } from '../src/index.js';
-import { TestClient } from './client.js';
+import { resetDb, TestClient } from './client.js';
 
 const PORT = 3994;
 const BASE = `http://localhost:${PORT}`;
 let server: { close: () => Promise<void> };
-beforeAll(async () => { server = await startServer(PORT, false); });
+beforeAll(async () => {
+  await resetDb();
+  server = await startServer(PORT, false); });
 afterAll(async () => { await server.close(); await prisma.$disconnect(); });
 
-it('tapis : vote « deux fois », deux boards, jetons conservés ; straddle posé automatiquement', async () => {
+it('tapis : vote « deux fois », deux boards, jetons conservés ; straddle général limité à une fois toutes les 15 mains', async () => {
   const me = new TestClient(BASE, `rit${Date.now().toString(36).slice(-5)}`);
   await me.register();
   const roomId = (await me.api('POST', '/rooms', { name: 'RIT' })).data.room.id;
@@ -20,12 +22,13 @@ it('tapis : vote « deux fois », deux boards, jetons conservés ; straddle pos�
   await me.emit('game:join', { gameId: gid });
   await me.emit('game:sit', { gameId: gid, seat: 0, buyIn: 1000 });
   for (let i = 0; i < 3; i++) await me.emit('game:addBot', { gameId: gid });
-  expect((await me.emit('game:straddle', { gameId: gid, on: true })).ok).toBe(true);
+  expect((await me.emit('game:bomb', { gameId: gid })).ok).toBe(true);
+  expect((await me.emit('game:bomb', { gameId: gid })).code).toBe('PENDING');
   let last = -1;
   let sawStraddle = false;
   let voted = false;
   me.socket!.on('game:state', async (s: GameView) => {
-    if (s.seats[0]?.isStraddle) sawStraddle = true;
+    if (s.bombPot) sawStraddle = true;
     if (s.me.canVoteRunout && !voted) {
       voted = true;
       await me.emit('game:runout', { gameId: gid, accept: true });
@@ -39,8 +42,10 @@ it('tapis : vote « deux fois », deux boards, jetons conservés ; straddle pos�
   const twice = await me.waitFor((s) => !!s.result && !!s.board2 && s.board2.length === 5, 90_000);
   expect(twice.result!.pots.some((p) => p.run === 2)).toBe(true);
   expect(twice.board.length).toBe(5);
-  await me.waitFor(() => sawStraddle, 90_000).catch(() => undefined);
   expect(sawStraddle).toBe(true);
+  // Délai : pas de nouveau straddle général avant 15 mains
+  const again = await me.emit('game:bomb', { gameId: gid });
+  if (me.state!.handNumber < 15) expect(again.code).toBe('COOLDOWN');
   // Conservation : jetons des sièges + caves = cohérent
   const { getManager } = await import('../src/realtime/socket.js');
   const rt = getManager().peek(gid)!;

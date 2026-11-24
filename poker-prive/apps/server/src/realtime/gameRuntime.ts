@@ -34,6 +34,8 @@ export interface GameBroadcaster {
   state(rt: GameRuntime): void;
   log(gameId: string, line: LogLine): void;
   toUser(userId: string, event: string, payload: unknown): void;
+  /** Nombre de connexions humaines présentes sur la table (joueurs + spectateurs). */
+  viewerCount(gameId: string): number;
 }
 
 interface PlayerMeta {
@@ -82,6 +84,8 @@ interface RuntimeSnapshot {
   tournament: TournamentState | null;
   actionSeq: number;
   registered: string[];
+  bombRequestedBy?: string | null;
+  lastBombHand?: number | null;
 }
 
 export interface RuntimeInit {
@@ -114,6 +118,10 @@ export class GameRuntime {
   /** Probabilités de gain par longueur de board pendant un tapis. */
   private equityByBoard = new Map<number, { userId: string; win: number; tie: number }[]>();
   /** Vote « run it twice » en cours. */
+  /** Straddle général demandé pour la prochaine main (id du joueur). */
+  bombRequestedBy: string | null = null;
+  /** Numéro de la dernière main jouée en straddle général. */
+  lastBombHand: number | null = null;
   private runoutVote: { deadline: number; votes: Map<string, boolean | null>; timer: NodeJS.Timeout; boardBefore: number } | null = null;
   private turnTimer: NodeJS.Timeout | null = null;
   private nextHandTimer: NodeJS.Timeout | null = null;
@@ -137,18 +145,20 @@ export class GameRuntime {
     if (init.snapshot) {
       this.table = PokerTable.restore(init.snapshot.table);
       this.table.config.enforceBlindRules = init.config.mode === 'CASH';
-      this.table.config.straddle = init.config.mode === 'CASH' && init.config.allowStraddle !== false;
+      this.table.config.straddle = false;
       this.table.config.runItTwice = init.config.mode === 'CASH' && init.config.runItTwice !== false;
       // Après un redémarrage, les humains doivent se reconnecter ; les robots, pilotés par le serveur, restent connectés
       for (const m of init.snapshot.meta) this.meta.set(m.userId, { ...m, connected: !!m.bot, disconnectedAt: m.bot ? null : Date.now() });
       this.tournament = init.snapshot.tournament;
       this.actionSeq = init.snapshot.actionSeq;
       this.registered = init.snapshot.registered ?? [];
+      this.bombRequestedBy = init.snapshot.bombRequestedBy ?? null;
+      this.lastBombHand = init.snapshot.lastBombHand ?? null;
     } else {
       this.table = new PokerTable({
         smallBlind: init.config.smallBlind, bigBlind: init.config.bigBlind, ante: init.config.ante, maxSeats: init.config.maxSeats,
         enforceBlindRules: init.config.mode === 'CASH',
-        straddle: init.config.mode === 'CASH' && init.config.allowStraddle !== false,
+        straddle: false,
         runItTwice: init.config.mode === 'CASH' && init.config.runItTwice !== false,
       });
     }
@@ -418,14 +428,36 @@ export class GameRuntime {
     return this.equityByBoard.get(key)!;
   }
 
-  setStraddle(userId: string, on: boolean): void {
-    try {
-      this.table.setStraddle(userId, on);
-    } catch (e) {
-      if (e instanceof PokerError) throw new GameError(e.code, e.message);
-      throw e;
-    }
-    this.log(`${this.meta.get(userId)?.username ?? '?'} ${on ? 'active' : 'désactive'} le straddle`, 'system');
+  // ─── Straddle général (bomb pot) ───
+
+  private static readonly BOMB_EVERY = 15;
+
+  /** Nombre de mains avant de pouvoir relancer un straddle général (0 = disponible). */
+  bombInHands(): number {
+    if (this.lastBombHand === null) return 0;
+    return Math.max(0, this.lastBombHand + GameRuntime.BOMB_EVERY - (this.table.handNumber + 1));
+  }
+
+  bombAllowed(): boolean {
+    return this.config.mode === 'CASH' && this.config.allowStraddle !== false && this.status !== 'FINISHED';
+  }
+
+  requestBomb(userId: string): void {
+    if (!this.bombAllowed()) throw new GameError('NO_BOMB', 'Le straddle général est désactivé à cette table');
+    if (this.table.seatOf(userId) === -1) throw new GameError('NOT_SEATED', 'Asseyez-vous pour lancer un straddle général');
+    if (this.bombRequestedBy) throw new GameError('PENDING', 'Un straddle général est déjà prévu à la prochaine main');
+    const wait = this.bombInHands();
+    if (wait > 0) throw new GameError('COOLDOWN', `Prochain straddle général possible dans ${wait} main${wait > 1 ? 's' : ''}`);
+    this.bombRequestedBy = userId;
+    const bb = this.table.config.bigBlind;
+    this.log(`💣 ${this.meta.get(userId)?.username ?? '?'} lance un straddle général : tout le monde posera ${fmt(bb * 2)} à la prochaine main, flop direct`, 'system');
+    this.changed();
+  }
+
+  cancelBomb(userId: string): void {
+    if (this.bombRequestedBy !== userId) throw new GameError('NOT_YOURS', "Vous n'avez pas lancé de straddle général");
+    this.bombRequestedBy = null;
+    this.log(`${this.meta.get(userId)?.username ?? '?'} annule le straddle général`, 'system');
     this.changed();
   }
 
@@ -1011,8 +1043,16 @@ export class GameRuntime {
     this.maybeStartHand();
   }
 
+  /** Relance la partie si elle attendait (ex. un humain revient à une table de robots). */
+  wake(): void {
+    this.maybeStartHand();
+  }
+
   private maybeStartHand(): void {
     if (this.disposed || this.status !== 'RUNNING') return;
+    // Cash game : pas de nouvelle main si aucun humain ne regarde la table
+    // (évite qu'une table de robots joue toute seule indéfiniment)
+    if (this.config.mode === 'CASH' && this.io.viewerCount(this.id) === 0) return;
     if (this.tournament?.onBreak || this.tournament?.pendingBreak) return;
     if (this.nextHandTimer || (this.table.hand && !this.table.hand.finished)) return;
     if (!this.staging.resultVisible) return;
@@ -1024,7 +1064,12 @@ export class GameRuntime {
       const lvl = this.config.blindLevels[t.levelIndex]!;
       this.table.setBlinds(lvl.smallBlind, lvl.bigBlind, lvl.ante);
     }
-    const h = this.table.startHand(secureRand);
+    const bombPot = this.bombRequestedBy && this.bombAllowed() ? this.table.config.bigBlind * 2 : 0;
+    const h = this.table.startHand(secureRand, undefined, { bombPot });
+    if (bombPot) {
+      this.lastBombHand = h.handNumber;
+      this.bombRequestedBy = null;
+    }
     this.actionSeq += 1;
     this.staging = { visibleBoard: 0, resultVisible: true };
     // Petit bonus de time bank à chaque main (plafonné)
@@ -1033,7 +1078,9 @@ export class GameRuntime {
       m.timeBankMs = Math.min(this.config.timeBankSeconds * 1000, m.timeBankMs + 2000);
       m.lastAction = null;
     }
-    this.log(`Nouvelle main #${h.handNumber} — blinds ${fmt(h.smallBlind)}/${fmt(h.bigBlind)}${h.ante ? `, ante ${fmt(h.ante)}` : ''}`, 'hand');
+    this.log(bombPot
+      ? `Nouvelle main #${h.handNumber} — 💣 straddle général : ${fmt(bombPot)} chacun, flop direct`
+      : `Nouvelle main #${h.handNumber} — blinds ${fmt(h.smallBlind)}/${fmt(h.bigBlind)}${h.ante ? `, ante ${fmt(h.ante)}` : ''}`, 'hand');
     if (h.finished) {
       // Tous à tapis dès les blinds : déroulé immédiat
       const streets = h.events.filter((e) => e.type === 'street').length;
@@ -1168,7 +1215,13 @@ export class GameRuntime {
     const stats = computeHandStats(h.events);
     const durationSec = Math.max(1, Math.round((Date.now() - h.startedAt) / 1000));
     this.enqueue(async () => {
+      // Main + état de la table enregistrés ensemble (tout ou rien) : après un
+      // redémarrage, l'état restauré est toujours cohérent avec l'historique.
+      const snapshot = this.buildSnapshot();
       await prisma.$transaction(async (tx) => {
+        const already = await tx.hand.findUnique({ where: { gameId_handNumber: { gameId: this.id, handNumber: h.handNumber } }, select: { id: true } });
+        if (already) return; // déjà enregistrée (reprise après redémarrage)
+        await tx.game.update({ where: { id: this.id }, data: { snapshot: snapshot as unknown as Prisma.InputJsonValue } });
         const hand = await tx.hand.create({
           data: {
             gameId: this.id, handNumber: h.handNumber, board: h.board, events: h.events as unknown as Prisma.InputJsonValue,
@@ -1198,13 +1251,18 @@ export class GameRuntime {
   }
 
   private async writeSnapshot(): Promise<void> {
+    await prisma.game.update({ where: { id: this.id }, data: { snapshot: this.buildSnapshot() as unknown as Prisma.InputJsonValue } });
+  }
+
+  private buildSnapshot(): RuntimeSnapshot {
     const snap: RuntimeSnapshot = {
       table: this.table.snapshot(), meta: [...this.meta.values()], tournament: this.tournament ? { ...this.tournament } : null,
       actionSeq: this.actionSeq, registered: this.registered,
+      bombRequestedBy: this.bombRequestedBy, lastBombHand: this.lastBombHand,
     };
     if (snap.tournament?.levelEndsAt) snap.tournament.levelRemainingMs = Math.max(1000, snap.tournament.levelEndsAt - Date.now());
     if (snap.tournament?.breakEndsAt) snap.tournament.levelRemainingMs = Math.max(1000, snap.tournament.breakEndsAt - Date.now());
-    await prisma.game.update({ where: { id: this.id }, data: { snapshot: snap as unknown as Prisma.InputJsonValue } });
+    return snap;
   }
 
   private async refreshBankroll(userId: string): Promise<void> {
@@ -1264,7 +1322,7 @@ export class GameRuntime {
         streetBet: live && hp ? hp.streetBet : 0, inHand: !!hp && !hp.folded, folded: !!hp?.folded, allIn: !!hp?.allIn,
         sittingOut: s.sittingOut || !!m?.away, connected: m?.bot ? true : (m?.connected ?? false), cards, lastAction: m?.lastAction ?? null,
         timeBank: Math.round((m?.timeBankMs ?? 0) / 1000), isButton: !!h && h.buttonSeat === i,
-        isSmallBlind: !!h && h.sbSeat === i && !h.finished, isBigBlind: !!h && h.bbSeat === i && !h.finished,
+        isSmallBlind: !!h && h.sbSeat === i && !h.finished && !h.bombPot, isBigBlind: !!h && h.bbSeat === i && !h.finished && !h.bombPot,
         pendingRebuy: !!m?.pendingRebuyUntil,
         isBot: !!m?.bot,
         isStraddle: !!h && !h.finished && h.straddleSeat === i,
@@ -1318,13 +1376,19 @@ export class GameRuntime {
         canShow: !!h?.finished && resultVisible && !!this.result && !!myHp && !myHp.shown,
         runoutVote: this.runoutVote?.votes.get(userId),
         canVoteRunout: !!this.runoutVote && this.runoutVote.votes.get(userId) === null,
-        straddleOn: mySeat >= 0 && !!this.table.seats[mySeat]!.straddle,
+        bomb: {
+          available: this.bombAllowed() && mySeat >= 0 && !this.bombRequestedBy && this.bombInHands() === 0,
+          inHands: this.bombInHands(),
+          pendingBy: this.bombRequestedBy ? (this.meta.get(this.bombRequestedBy)?.username ?? '?') : null,
+          canCancel: this.bombRequestedBy === userId,
+        },
       },
       tournament,
       spectators: this.spectatorCount,
       equity: h?.finished && !resultVisible
         ? (this.equityByBoard.get(this.staging.visible2 != null ? 100 + this.staging.visible2 : this.staging.visibleBoard) ?? null)
         : this.runoutVote ? (this.runoutEquity() ?? null) : null,
+      bombPot: !!h?.bombPot && !h.finished,
       board2: h?.board2 ? (h.finished && !resultVisible ? (this.staging.visible2 != null ? h.board2.slice(0, this.staging.visible2) : null) : h.board2) : null,
       runout: this.runoutVote ? { deadline: this.runoutVote.deadline, votes: [...this.runoutVote.votes].map(([id, vote]) => ({ userId: id, vote })) } : null,
     };

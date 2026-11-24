@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db.js';
 import { startServer } from '../src/index.js';
 import { getManager } from '../src/realtime/socket.js';
-import { TestClient } from './client.js';
+import { resetDb, TestClient } from './client.js';
 
 const PORT = 3997;
 const BASE = `http://localhost:${PORT}`;
@@ -11,6 +11,7 @@ let server: { close: () => Promise<void> };
 const tag = Date.now().toString(36).slice(-5);
 
 beforeAll(async () => {
+  await resetDb();
   server = await startServer(PORT, false);
 });
 afterAll(async () => {

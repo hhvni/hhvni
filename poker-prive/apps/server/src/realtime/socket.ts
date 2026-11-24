@@ -113,6 +113,7 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
       io.to(`game:${gameId}`).emit('game:log', { gameId, line });
     },
     toUser: notifyUser,
+    viewerCount: (gameId: string) => io.sockets.adapter.rooms.get(`game:${gameId}`)?.size ?? 0,
   };
   const manager = new GameManager(broadcaster);
   managerRef = manager;
@@ -183,6 +184,7 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
       socket.data.games.add(gameId);
       await rt.loadBankroll(user.id);
       rt.onConnect(user.id);
+      rt.wake();
       const messages = await recentChat(rt.roomId, gameId);
       socket.emit('game:state', rt.viewFor(user.id));
       return { logs: rt.recentLogs(), messages };
@@ -208,7 +210,8 @@ export function setupSockets(http: HttpServer): { io: Server; manager: GameManag
     on('game:pause', GameIdSchema, async ({ gameId }) => (await joined(gameId)).pause(user.id));
     on('game:close', GameIdSchema, async ({ gameId }) => (await joined(gameId)).close(user.id));
     on('game:runout', GameIdSchema.extend({ accept: z.boolean() }), async ({ gameId, accept }) => (await joined(gameId)).voteRunout(user.id, accept));
-    on('game:straddle', GameIdSchema.extend({ on: z.boolean() }), async ({ gameId, on }) => (await joined(gameId)).setStraddle(user.id, on));
+    on('game:bomb', GameIdSchema, async ({ gameId }) => (await joined(gameId)).requestBomb(user.id));
+    on('game:cancelBomb', GameIdSchema, async ({ gameId }) => (await joined(gameId)).cancelBomb(user.id));
     on('game:postNow', GameIdSchema, async ({ gameId }) => (await joined(gameId)).postNow(user.id));
     on('game:showCards', GameIdSchema, async ({ gameId }) => (await joined(gameId)).showCards(user.id));
     on('game:addBot', GameIdSchema, async ({ gameId }) => (await joined(gameId)).addBot(user.id));

@@ -53,7 +53,11 @@ function buildFrames(h: HandResp['hand']): Frame[] {
         const p = cur.players[e.playerId]!;
         p.stack -= e.amount;
         p.bet += e.amount;
-        p.action = e.kind === 'sb' ? 'SB' : e.kind === 'dead' ? 'Blinde morte' : e.kind === 'straddle' ? 'Straddle' : 'BB';
+        p.action = e.kind === 'sb' ? 'SB' : e.kind === 'dead' ? 'Blinde morte' : e.kind === 'straddle' ? 'Straddle' : e.kind === 'bomb' ? 'Straddle général' : 'BB';
+        if (e.kind === 'bomb') {
+          p.bet -= e.amount;
+          cur.pot += e.amount;
+        }
         if (e.kind === 'dead') {
           p.bet -= e.amount;
           cur.pot += e.amount;
@@ -61,6 +65,7 @@ function buildFrames(h: HandResp['hand']): Frame[] {
         push(e.kind === 'post' ? `${name(e.playerId)} paie la grosse blinde pour entrer (${fmt(e.amount)})`
           : e.kind === 'dead' ? `${name(e.playerId)} paie la petite blinde manquée (${fmt(e.amount)}, argent mort)`
           : e.kind === 'straddle' ? `${name(e.playerId)} straddle à ${fmt(e.amount)}`
+          : e.kind === 'bomb' ? `${name(e.playerId)} pose ${fmt(e.amount)} (straddle général)`
           : `${name(e.playerId)} paie la ${e.kind === 'sb' ? 'petite' : 'grosse'} blind (${fmt(e.amount)})`);
         break;
       }

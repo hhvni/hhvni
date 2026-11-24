@@ -135,7 +135,7 @@ export function CreateGameForm({ roomId, onCreated }: { roomId: string; onCreate
           </div>
           {v.mode === 'CASH' && (
             <div className="space-y-1 border-t border-white/6 pt-3">
-              <Toggle label="Straddle autorisé" hint="Le joueur après la grosse blinde peut miser 2 BB à l'aveugle" checked={v.allowStraddle} onChange={(x) => set('allowStraddle', x)} />
+              <Toggle label="Straddle général autorisé" hint="Un joueur peut déclencher une main où tout le monde pose 2 BB, flop direct (une fois toutes les 15 mains)" checked={v.allowStraddle} onChange={(x) => set('allowStraddle', x)} />
               <Toggle label="Run it twice autorisé" hint="Sur un tapis, les joueurs peuvent accepter de jouer le board deux fois" checked={v.runItTwice} onChange={(x) => set('runItTwice', x)} />
             </div>
           )}

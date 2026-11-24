@@ -127,3 +127,39 @@ describe('Run it twice', () => {
     }
   });
 });
+
+describe('Straddle général (bomb pot)', () => {
+  it('tout le monde pose 2 BB, pas d’enchères préflop, le jeu reprend au flop', () => {
+    const t = makeTable([1000, 1000, 1000, 1000]);
+    const h = t.startHand(undefined, undefined, { bombPot: 200 });
+    expect(h.bombPot).toBe(200);
+    expect(h.players.every((p) => p.totalBet === 200 && p.stack === 800)).toBe(true);
+    expect(h.street).toBe('flop');
+    expect(h.board).toHaveLength(3);
+    expect(h.events.some((e) => e.type === 'action' && e.street === 'preflop')).toBe(false);
+    // Premier à parler au flop : à gauche du bouton, personne n'a misé
+    expect(t.currentPlayerId()).toBe('p1');
+    expect(t.legalActions('p1')!.canCheck).toBe(true);
+    expect(t.currentPots()[0]!.amount).toBe(800);
+    while (!t.hand!.finished) t.act(t.currentPlayerId()!, { type: 'check' });
+    expect(total(t)).toBe(4000);
+  });
+
+  it('joueur trop court : tapis en posant, le reste se joue normalement', () => {
+    const t = makeTable([150, 1000, 1000]);
+    const h = t.startHand(undefined, undefined, { bombPot: 200 });
+    expect(h.players.find((p) => p.playerId === 'p0')!.allIn).toBe(true);
+    while (!t.hand!.finished) t.act(t.currentPlayerId()!, { type: 'check' });
+    expect(total(t)).toBe(2150);
+  });
+
+  it('la main suivante reprend normalement avec blinds', () => {
+    const t = makeTable([1000, 1000, 1000]);
+    t.startHand(undefined, undefined, { bombPot: 200 });
+    while (!t.hand!.finished) t.act(t.currentPlayerId()!, { type: 'check' });
+    const h2 = t.startHand();
+    expect(h2.bombPot).toBeUndefined();
+    expect(h2.street).toBe('preflop');
+    expect(h2.currentBet).toBe(100);
+  });
+});

@@ -115,6 +115,8 @@ export interface GameView {
   config: GameConfig;
   seats: (PublicSeat | null)[];
   board: Card[];
+  /** La main en cours est un straddle général (tout le monde à 2 BB, pas d'enchères préflop). */
+  bombPot: boolean;
   /** Second board (run it twice), sinon null. */
   board2: Card[] | null;
   /** Vote « jouer le tapis deux fois » en cours. */
@@ -149,8 +151,8 @@ export interface GameView {
     /** Peut voter pour jouer le tapis deux fois (null = pas concerné). */
     runoutVote: boolean | null | undefined;
     canVoteRunout: boolean;
-    /** Straddle automatique activé. */
-    straddleOn: boolean;
+    /** Straddle général (bomb pot) : disponibilité et demande en attente. */
+    bomb: { available: boolean; inHands: number; pendingBy: string | null; canCancel: boolean };
   };
   tournament: TournamentView | null;
   spectators: number;

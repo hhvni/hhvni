@@ -3,12 +3,14 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { GameView } from '@poker/engine';
 import { prisma } from '../src/db.js';
 import { startServer } from '../src/index.js';
-import { TestClient } from './client.js';
+import { resetDb, TestClient } from './client.js';
 
 const PORT = 3996;
 const BASE = `http://localhost:${PORT}`;
 let server: { close: () => Promise<void> };
-beforeAll(async () => { server = await startServer(PORT, false); });
+beforeAll(async () => {
+  await resetDb();
+  server = await startServer(PORT, false); });
 afterAll(async () => { await server.close(); await prisma.$disconnect(); });
 
 it('les robots restent assis même quand le joueur gagne et les élimine', async () => {

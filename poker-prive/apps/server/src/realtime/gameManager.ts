@@ -43,6 +43,10 @@ export class GameManager {
       this.io,
     );
     await this.refreshAdminsFor(rt);
+    // Sécurité : ne jamais réutiliser un numéro de main déjà enregistré
+    const last = await prisma.hand.aggregate({ where: { gameId }, _max: { handNumber: true } });
+    const maxNum = last._max.handNumber ?? 0;
+    if (maxNum > rt.table.handNumber && (!rt.table.hand || rt.table.hand.finished)) rt.table.handNumber = maxNum;
     this.runtimes.set(gameId, rt);
     if (g.snapshot && g.status !== 'FINISHED') rt.resume();
     return rt;

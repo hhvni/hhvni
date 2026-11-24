@@ -303,12 +303,28 @@ function PrimaryActions({ state, run, isAdmin, mySeat }: { state: GameView; run:
   if (state.me.canAddon) items.push(<Button key="addon" size="sm" variant="gold" onClick={() => run('game:addon', {}, 'Add-on pris')}>Add-on +{fmt(state.config.addonStack)}</Button>);
   if (mySeat && state.status !== 'FINISHED' && mySeat.sittingOut && !mySeat.pendingRebuy) items.push(<Button key="back" size="sm" variant="success" onClick={() => run('game:away', { away: false })}>Je suis de retour</Button>);
   if (mySeat && state.mode === 'CASH' && state.config.allowStraddle !== false && state.status !== 'FINISHED') {
-    items.push(
-      <button key="straddle" onClick={() => run('game:straddle', { on: !state.me.straddleOn })} title="Mise automatique de 2 BB à l'aveugle quand vous êtes juste après la grosse blinde" className={cx('flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold ring-1 backdrop-blur transition', state.me.straddleOn ? 'bg-danger/20 text-[#ffb3ba] ring-danger/60' : 'bg-night-900/80 text-muted ring-white/10 hover:text-ink')}>
-        <span className={cx('relative h-4 w-7 rounded-full transition', state.me.straddleOn ? 'bg-danger' : 'bg-white/15')}><span className={cx('absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all', state.me.straddleOn ? 'left-3.5' : 'left-0.5')} /></span>
-        Straddle 2 BB
-      </button>,
-    );
+    const b = state.me.bomb;
+    if (b.pendingBy) {
+      items.push(
+        <div key="bomb" className="flex items-center gap-2 rounded-xl bg-danger/20 px-3 py-1.5 text-xs font-semibold text-[#ffb3ba] ring-1 ring-danger/50">
+          💣 Straddle général à la prochaine main ({b.pendingBy})
+          {b.canCancel && <button className="underline" onClick={() => run('game:cancelBomb', {})}>Annuler</button>}
+        </div>,
+      );
+    } else {
+      items.push(
+        <button
+          key="bomb"
+          disabled={!b.available}
+          onClick={() => confirm('Lancer un straddle général ? À la prochaine main, tout le monde pose 2 BB et le flop sort directement.') && run('game:bomb', {})}
+          title="À la prochaine main, tout le monde pose 2 BB automatiquement et le flop sort directement (une fois toutes les 15 mains)"
+          className="flex items-center gap-2 rounded-xl bg-night-900/80 px-3 py-1.5 text-xs font-semibold text-ink ring-1 ring-danger/40 backdrop-blur transition hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          💣 Straddle général 2 BB
+          {b.inHands > 0 && <span className="text-[10px] font-normal text-muted">dans {b.inHands} main{b.inHands > 1 ? 's' : ''}</span>}
+        </button>,
+      );
+    }
   }
   if (state.me.canShow) items.push(<Button key="show" size="sm" variant="ghost" onClick={() => run('game:showCards', {})}>Montrer mes cartes</Button>);
   if (state.me.postNowAmount > 0) {
