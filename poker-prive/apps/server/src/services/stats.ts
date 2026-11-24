@@ -23,6 +23,28 @@ interface CounterRow {
   net: bigint | null;
 }
 
+/** Compteurs de jeu seuls (sans résultats financiers) : pour le HUD de la table. */
+export async function userHud(userId: string, roomId?: string) {
+  const roomFilter = roomId ? Prisma.sql`AND g."roomId" = ${roomId}` : Prisma.empty;
+  const [row] = await prisma.$queryRaw<CounterRow[]>`
+    SELECT COUNT(*) AS hands,
+      COALESCE(SUM(hp.vpip::int),0) AS vpip, COALESCE(SUM(hp.pfr::int),0) AS pfr,
+      COALESCE(SUM(hp."threeBet"::int),0) AS tb, COALESCE(SUM(hp."threeBetOpportunity"::int),0) AS tbopp,
+      COALESCE(SUM(hp."postflopBets"),0) AS bets, COALESCE(SUM(hp."postflopRaises"),0) AS raises,
+      COALESCE(SUM(hp."postflopCalls"),0) AS calls, COALESCE(SUM(hp."sawFlop"::int),0) AS sawflop,
+      COALESCE(SUM(hp."wentToShowdown"::int),0) AS wtsd, COALESCE(SUM(hp."wonAtShowdown"::int),0) AS wsd,
+      COALESCE(SUM(hp.won::int),0) AS won, NULL AS net
+    FROM "HandPlayer" hp JOIN "Hand" h ON h.id = hp."handId" JOIN "Game" g ON g.id = h."gameId"
+    WHERE hp."userId" = ${userId} ${roomFilter}`;
+  const r = row!;
+  const n = (v: bigint | null) => Number(v ?? 0);
+  return aggregate({
+    hands: n(r.hands), vpipCount: n(r.vpip), pfrCount: n(r.pfr), threeBetCount: n(r.tb), threeBetOpp: n(r.tbopp),
+    postflopBets: n(r.bets), postflopRaises: n(r.raises), postflopCalls: n(r.calls), sawFlopCount: n(r.sawflop),
+    wtsdCount: n(r.wtsd), wsdCount: n(r.wsd),
+  });
+}
+
 export async function userStats(userId: string, roomId?: string) {
   const roomFilter = roomId ? Prisma.sql`AND g."roomId" = ${roomId}` : Prisma.empty;
   const [row] = await prisma.$queryRaw<CounterRow[]>`

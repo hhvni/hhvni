@@ -96,6 +96,10 @@ export function describeHand(hole: readonly (Card | null)[], board: readonly Car
   const core = best.cards.slice(0, coreSize(best.category));
   const onBoard = !core.some((c) => h.includes(c));
   const cat = best.category;
+  if (cat === HandCategory.HighCard && onBoard) {
+    // Aucune combinaison et la carte haute est sur le board : rien à signaler
+    return { made: 'Rien pour l’instant', draws: draws(h, [...board], cat), onBoard: false, tier: 0 };
+  }
   const tier: HandHint['tier'] = onBoard ? 0
     : cat >= HandCategory.ThreeOfAKind ? 3
     : cat >= HandCategory.TwoPair ? 2

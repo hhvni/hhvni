@@ -17,6 +17,7 @@ import { ActionBar } from '@/components/poker/ActionBar';
 import { ChatBox } from '@/components/poker/ChatBox';
 import { MiniCards } from '@/components/poker/PlayingCard';
 import { StreamAudio } from '@/components/poker/VideoTile';
+import { HudStats, LastHandModal, NoteEditor, useHud, usePlayerNotes, type PlayerNote } from '@/components/poker/TableExtras';
 import { Avatar, Badge, Button, cx, Modal, PageLoader, Select, Tabs, Toggle, useToast } from '@/components/ui';
 
 interface Prefs { sound: boolean; videoSize: number; showRemote: boolean; felt: 'black' | 'green' | 'blue' }
@@ -64,7 +65,33 @@ function Game({ gameId }: { gameId: string }) {
   const [videoOpen, setVideoOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [menuSeat, setMenuSeat] = useState<PublicSeat | null>(null);
+  const [lastHandOpen, setLastHandOpen] = useState(false);
   const myTurnSeq = useRef(-1);
+
+  // Notes personnelles sur les joueurs assis
+  const seatedIds = useMemo(
+    () => (state?.seats ?? []).filter((x): x is PublicSeat => !!x && x.userId !== state?.me.userId).map((x) => x.userId),
+    [state?.seats, state?.me.userId],
+  );
+  const { notes, save: saveNote } = usePlayerNotes(seatedIds);
+
+  // Bulles de chat au-dessus des joueurs (6 s par message)
+  const [bubbles, setBubbles] = useState<Record<string, { id: string; text: string }>>({});
+  const lastMsgId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const last = messages.at(-1);
+    if (lastMsgId.current === undefined) {
+      lastMsgId.current = last?.id ?? null; // pas de bulles pour l'historique chargé à l'arrivée
+      return;
+    }
+    const idx = lastMsgId.current ? messages.findIndex((m) => m.id === lastMsgId.current) : -1;
+    const fresh = messages.slice(idx + 1).filter((m) => m.kind === 'USER' && m.userId);
+    lastMsgId.current = last?.id ?? null;
+    for (const m of fresh) {
+      setBubbles((b) => ({ ...b, [m.userId!]: { id: m.id, text: m.text } }));
+      setTimeout(() => setBubbles((b) => (b[m.userId!]?.id === m.id ? Object.fromEntries(Object.entries(b).filter(([k]) => k !== m.userId)) : b)), 6000);
+    }
+  }, [messages]);
 
   // Son quand c'est notre tour
   useEffect(() => {
@@ -202,6 +229,9 @@ function Game({ gameId }: { gameId: string }) {
           <IconButton title="Réglages vidéo et table" onClick={() => setVideoOpen(true)}>
             <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 13.6H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10.4 3V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
           </IconButton>
+          <IconButton title="Revoir le dernier coup" onClick={() => setLastHandOpen(true)}>
+            <path d="M11 19l-7-7 7-7M20 19l-7-7 7-7" />
+          </IconButton>
           <IconButton title="Historique des mains" className="hidden sm:block" onClick={() => setHistoryOpen(true)}>
             <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 3" />
           </IconButton>
@@ -227,6 +257,8 @@ function Game({ gameId }: { gameId: string }) {
               feltTheme={prefs.felt}
               onSit={(seat) => setSitSeat(seat)}
               onSeatMenu={(s) => setMenuSeat(s)}
+              bubbles={bubbles}
+              notes={notes}
             />
           </div>
 
@@ -261,7 +293,8 @@ function Game({ gameId }: { gameId: string }) {
       <SitModal seat={sitSeat} state={state} onClose={() => setSitSeat(null)} run={run} />
       <VideoSettings open={videoOpen} onClose={() => setVideoOpen(false)} video={video} prefs={prefs} setPrefs={setPrefs} names={Object.fromEntries(state.seats.filter((x): x is PublicSeat => !!x).map((x) => [x.userId, x.username]))} />
       <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} gameId={gameId} />
-      <SeatMenu seat={menuSeat} state={state} onClose={() => setMenuSeat(null)} run={run} />
+      <SeatMenu seat={menuSeat} state={state} onClose={() => setMenuSeat(null)} run={run} note={menuSeat ? notes[menuSeat.userId] : undefined} onSaveNote={saveNote} />
+      <LastHandModal open={lastHandOpen} onClose={() => setLastHandOpen(false)} gameId={gameId} />
       <RebuyPrompt state={state} run={run} now={now} />
       <RunoutPrompt state={state} run={run} now={now} />
       {video.error && <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-danger/90 px-4 py-2 text-sm text-white">{video.error}</div>}
@@ -542,7 +575,8 @@ function SitModal({ seat, state, onClose, run }: { seat: number | null; state: G
   );
 }
 
-function SeatMenu({ seat, state, onClose, run }: { seat: PublicSeat | null; state: GameView; onClose: () => void; run: Run }) {
+function SeatMenu({ seat, state, onClose, run, note, onSaveNote }: { seat: PublicSeat | null; state: GameView; onClose: () => void; run: Run; note?: PlayerNote; onSaveNote: (userId: string, n: PlayerNote) => Promise<void> }) {
+  const hud = useHud(seat?.userId ?? null, state.roomId);
   if (!seat) return null;
   const isMe = seat.userId === state.me.userId;
   return (
@@ -552,7 +586,7 @@ function SeatMenu({ seat, state, onClose, run }: { seat: PublicSeat | null; stat
           <Avatar name={seat.username} url={seat.avatarUrl} size={48} />
           <div>
             <div className="text-lg font-semibold tabular text-gold-300">{fmt(seat.stack)} jetons</div>
-            <div className="text-xs text-muted">{seat.connected ? 'Connecté' : 'Déconnecté'} · Time bank {seat.timeBank} s</div>
+            <div className="text-xs text-muted">{seat.connected ? 'Connecté' : 'Déconnecté'} · Réserve de temps {seat.timeBank} s</div>
           </div>
         </div>
         {seat.botStyle && (
@@ -561,6 +595,11 @@ function SeatMenu({ seat, state, onClose, run }: { seat: PublicSeat | null; stat
             <div className="text-xs text-muted">{seat.botStyle.description}</div>
           </div>
         )}
+        <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/10">
+          <div className="mb-1.5 text-xs font-semibold text-muted">Statistiques dans ce salon</div>
+          <HudStats hud={hud} />
+        </div>
+        {!isMe && <NoteEditor key={seat.userId} note={note} onSave={(n) => onSaveNote(seat.userId, n)} />}
         <Link href={`/players/${seat.userId}`} className="block"><Button className="w-full">Voir le profil et les statistiques</Button></Link>
         {state.me.isRoomAdmin && seat.isBot && (
           <Button className="w-full" onClick={async () => { if (await run('game:removeBot', { userId: seat.userId }, 'Le robot quitte la table')) onClose(); }}>

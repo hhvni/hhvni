@@ -9,7 +9,7 @@ import { ah, HttpError, requireAuth } from '../auth/middleware.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { hashToken, SESSION_COOKIE } from '../auth/sessions.js';
 import { isOnline } from '../realtime/socket.js';
-import { userStats } from '../services/stats.js';
+import { userHud, userStats } from '../services/stats.js';
 import { BOT_EMAIL_DOMAIN } from '../services/bots.js';
 import { UsernameSchema } from './auth.js';
 
@@ -106,6 +106,47 @@ usersRouter.get('/search', ah(async (req, res) => {
     select: { id: true, username: true, avatarUrl: true }, take: 10,
   });
   res.json({ users: users.map((u) => ({ ...u, online: isOnline(u.id) })) });
+}));
+
+// ─── Notes personnelles sur les joueurs (visibles seulement par leur auteur) ───
+
+const NOTE_COLORS = ['none', 'red', 'orange', 'green', 'blue', 'purple'] as const;
+const NoteInput = z.object({ text: z.string().max(1000).default(''), color: z.enum(NOTE_COLORS).default('none') });
+
+usersRouter.get('/notes', ah(async (req, res) => {
+  const ids = String(req.query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 20);
+  const notes = ids.length
+    ? await prisma.playerNote.findMany({ where: { authorId: req.user!.id, targetId: { in: ids } }, select: { targetId: true, text: true, color: true } })
+    : [];
+  res.json({ notes: Object.fromEntries(notes.map((n) => [n.targetId, { text: n.text, color: n.color }])) });
+}));
+
+usersRouter.put('/:id/note', ah(async (req, res) => {
+  const targetId = z.string().max(40).parse(req.params.id);
+  if (targetId === req.user!.id) throw new HttpError(400, 'Pas de note sur soi-même');
+  const parsed = NoteInput.safeParse(req.body);
+  if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? 'Note invalide');
+  const target = await prisma.user.findUnique({ where: { id: targetId }, select: { id: true } });
+  if (!target) throw new HttpError(404, 'Joueur introuvable');
+  const { text, color } = parsed.data;
+  if (!text.trim() && color === 'none') {
+    await prisma.playerNote.deleteMany({ where: { authorId: req.user!.id, targetId } });
+    return res.json({ note: null });
+  }
+  const note = await prisma.playerNote.upsert({
+    where: { authorId_targetId: { authorId: req.user!.id, targetId } },
+    create: { authorId: req.user!.id, targetId, text: text.trim(), color },
+    update: { text: text.trim(), color },
+    select: { text: true, color: true },
+  });
+  res.json({ note });
+}));
+
+/** Statistiques compactes affichées au survol d'un joueur à la table. */
+usersRouter.get('/:id/hud', ah(async (req, res) => {
+  const id = z.string().max(40).parse(req.params.id);
+  const roomId = typeof req.query.roomId === 'string' ? req.query.roomId.slice(0, 40) : undefined;
+  res.json({ hud: await userHud(id, roomId) });
 }));
 
 usersRouter.get('/:id', ah(async (req, res) => {

@@ -69,6 +69,22 @@ model User {
   messages      ChatMessage[]
   invitesSent   Invitation[]   @relation("InviteFrom")
   invitesGot    Invitation[]   @relation("InviteTo")
+  notesWritten  PlayerNote[]   @relation("NoteAuthor")
+  notesAbout    PlayerNote[]   @relation("NoteTarget")
+}
+
+/// Note personnelle d'un joueur sur un autre (visible uniquement par son auteur)
+model PlayerNote {
+  authorId  String
+  targetId  String
+  text      String   @default("")
+  /// Étiquette de couleur : none, red, orange, green, blue, purple
+  color     String   @default("none")
+  updatedAt DateTime @updatedAt
+  author    User     @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  target    User     @relation("NoteTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([authorId, targetId])
 }
 
 model Session {

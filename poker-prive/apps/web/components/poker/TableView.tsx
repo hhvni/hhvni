@@ -15,6 +15,7 @@ import { ChipStack } from './Chips';
 import { PlayingCard } from './PlayingCard';
 import { VideoTile } from './VideoTile';
 import { FeltDecor } from './FeltDecor';
+import { HudStats, noteColorCss, useHud, type PlayerNote } from './TableExtras';
 
 interface Props {
   state: GameView;
@@ -26,6 +27,10 @@ interface Props {
   feltTheme: 'black' | 'green' | 'blue';
   onSit?: (seat: number) => void;
   onSeatMenu?: (seat: PublicSeat) => void;
+  /** Derniers messages du chat, affichés en bulle au-dessus des joueurs. */
+  bubbles?: Record<string, { id: string; text: string }>;
+  /** Notes personnelles sur les joueurs. */
+  notes?: Record<string, PlayerNote>;
 }
 
 function useIsNarrow(): boolean {
@@ -46,7 +51,7 @@ function ellipse(index: number, n: number, rx: number, ry: number) {
   return { x: 50 + rx * Math.cos(a), y: 50 + ry * Math.sin(a) };
 }
 
-export function TableView({ state, now, reactions, video, videoSize, showRemoteVideo, feltTheme, onSit, onSeatMenu }: Props) {
+export function TableView({ state, now, reactions, video, videoSize, showRemoteVideo, feltTheme, onSit, onSeatMenu, bubbles, notes }: Props) {
   const narrow = useIsNarrow();
   const n = state.config.maxSeats;
   const mySeat = state.me.seat;
@@ -314,6 +319,10 @@ export function TableView({ state, now, reactions, video, videoSize, showRemoteV
                 reaction={reactions.filter((r) => r.userId === s.userId).at(-1)}
                 onMenu={onSeatMenu}
                 bottom={displayIndex(i) === 0}
+                upper={p.y < 50}
+                side={p.x < 28 ? 'left' : p.x > 72 ? 'right' : 'center'}
+                bubble={bubbles?.[s.userId]}
+                note={notes?.[s.userId]}
               />
             ) : (
               onSit && state.me.seat < 0 && state.mode === 'CASH' && state.status !== 'FINISHED' ? (
@@ -383,8 +392,12 @@ function TurnRing({ deadline, totalMs, now, size, timeBank }: { deadline: number
 }
 
 function Seat({
-  seat, state, now, isMe, narrow, winner, bestHole, hasShowdown, video, videoSize, showRemoteVideo, reaction, onMenu, bottom,
+  seat, state, now, isMe, narrow, winner, bestHole, hasShowdown, video, videoSize, showRemoteVideo, reaction, onMenu, bottom, upper, side, bubble, note,
 }: {
+  upper: boolean;
+  side: 'left' | 'center' | 'right';
+  bubble?: { id: string; text: string };
+  note?: PlayerNote;
   seat: PublicSeat;
   state: GameView;
   now: () => number;
@@ -402,6 +415,9 @@ function Seat({
 }) {
   const { bbMode, handHint } = useDisplayPrefs();
   const money = useMoney();
+  const [hover, setHover] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hud = useHud(hover && !isMe ? seat.userId : null, state.roomId);
   const hint = useMemo(
     () => (isMe && handHint && !state.result && seat.inHand && !seat.folded ? describeHand(state.me.cards, state.board) : null),
     [isMe, handHint, state.result, seat.inHand, seat.folded, state.me.cards, state.board],
@@ -420,7 +436,62 @@ function Seat({
   const eqLeader = !!eq && !!state.equity && eq.win > 0 && eq.win >= Math.max(...state.equity.map((e) => e.win));
 
   return (
-    <div className={cx('relative flex flex-col items-center', seat.folded && !winner && 'opacity-55')}>
+    <div
+      className={cx('relative flex flex-col items-center transition-opacity', seat.folded && !winner && !hover && !bubble && 'opacity-55')}
+      onMouseEnter={() => {
+        if (isMe) return;
+        hoverTimer.current = setTimeout(() => setHover(true), 350);
+      }}
+      onMouseLeave={() => {
+        if (hoverTimer.current) clearTimeout(hoverTimer.current);
+        setHover(false);
+      }}
+    >
+      {/* Bulle du dernier message de chat */}
+      <AnimatePresence>
+        {bubble && (
+          <motion.div
+            key={bubble.id}
+            initial={{ opacity: 0, y: 6, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6 }}
+            className={cx(
+              'pointer-events-none absolute left-1/2 z-40 w-max max-w-[180px] -translate-x-1/2 rounded-2xl bg-white px-2.5 py-1 text-center text-[11px] font-medium leading-snug text-night-950 shadow-xl',
+              upper ? 'top-full mt-6' : 'bottom-full mb-2',
+            )}
+          >
+            <span className="line-clamp-3 break-words">{bubble.text}</span>
+            <span className={cx('absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-white', upper ? '-top-1' : '-bottom-1')} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fiche au survol : statistiques + note */}
+      <AnimatePresence>
+        {hover && !bubble && (
+          <motion.div
+            initial={{ opacity: 0, y: upper ? -4 : 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className={cx(
+              'pointer-events-none absolute z-50 w-[230px] rounded-xl',
+              side === 'left' ? 'left-0' : side === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2',
+              'rounded-xl bg-night-850/95 p-2.5 shadow-2xl ring-1 ring-white/15 backdrop-blur',
+              upper ? 'top-full mt-6' : 'bottom-full mb-2',
+            )}
+          >
+            <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold">
+              {note && note.color !== 'none' && <span className={cx('h-2.5 w-2.5 rounded-full', noteColorCss(note.color))} />}
+              <span className="truncate">{seat.username}</span>
+              {seat.botStyle && <span className="ml-auto shrink-0 text-[10px] text-muted">{seat.botStyle.emoji} {seat.botStyle.label}</span>}
+            </div>
+            <HudStats hud={hud} compact />
+            {note?.text && <p className="mt-1.5 whitespace-pre-wrap border-t border-white/10 pt-1.5 text-[11px] italic text-ink/90">📝 {note.text}</p>}
+            <p className="mt-1.5 text-[9px] text-faint">Cliquez sur le joueur pour écrire une note</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Cartes */}
       <div className={cx('relative flex', isMe ? 'mb-1 gap-1' : '-mb-3 -space-x-3', bottom && isMe && 'order-first')}>
         {hint && <HandHintPill hint={hint} narrow={narrow} />}
@@ -442,6 +513,7 @@ function Seat({
       {/* Avatar / vidéo + minuteur */}
       <button type="button" onClick={() => onMenu?.(seat)} className={cx('relative rounded-full', winner && 'shadow-[0_0_0_3px_#ecc977,0_0_28px_rgba(236,201,119,0.7)]')} aria-label={`Siège de ${seat.username}`}>
         {turn && <TurnRing deadline={turn.deadline} totalMs={turn.totalMs} now={now} size={size} timeBank={turn.usingTimeBank} />}
+        {turn && <TurnCountdown deadline={turn.deadline} now={now} timeBank={turn.usingTimeBank} />}
         <VideoTile
           name={seat.username}
           avatarUrl={seat.avatarUrl}
@@ -476,6 +548,14 @@ function Seat({
         >
           {seat.allIn && seat.inHand ? 'TAPIS' : money(seat.stack)}
         </button>
+        {note && (note.color !== 'none' || note.text) && (
+          <span
+            className={cx('absolute -left-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] ring-2 ring-night-900', note.color !== 'none' ? noteColorCss(note.color) : 'bg-white/80')}
+            title={note.text || 'Note'}
+          >
+            {note.color === 'none' && '📝'}
+          </span>
+        )}
         <div className="absolute -right-2 -top-2 flex gap-0.5">
           {seat.isSmallBlind && <span className="rounded bg-info/90 px-1 text-[9px] font-bold text-white">SB</span>}
           {seat.isBigBlind && <span className="rounded bg-gold-500 px-1 text-[9px] font-bold text-night-950">BB</span>}
@@ -514,8 +594,10 @@ function Seat({
             <Badge tone="gold">Rebuy ?</Badge>
           ) : seat.sittingOut ? (
             <Badge>Absent</Badge>
+          ) : seat.folded && !seat.lastAction && state.street ? (
+            <span className="rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-faint">Couché</span>
           ) : seat.lastAction ? (
-            <motion.span key={seat.lastAction} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className={cx('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', seat.lastAction === 'Tapis' ? 'bg-danger text-white' : seat.lastAction === 'Couché' ? 'bg-black/60 text-muted' : 'bg-black/60 text-ink')}>
+            <motion.span key={seat.lastAction} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className={cx('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-md', actionTone(seat.lastAction))}>
               {(() => {
                 const m = /^(Mise|Relance) (.+)$/.exec(seat.lastAction);
                 return m ? `${m[1]} ${money(Number(m[2]!.replace(/\D/g, '')), true)}` : seat.lastAction;
@@ -525,6 +607,38 @@ function Seat({
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** Couleur de l'étiquette de dernière action. */
+function actionTone(label: string): string {
+  if (label === 'Tapis') return 'bg-danger text-white';
+  if (label === 'Couché') return 'bg-black/60 text-faint';
+  if (/^(Mise|Relance)/.test(label)) return 'bg-gold-400 text-night-950';
+  if (/^Suit/.test(label)) return 'bg-info/85 text-white';
+  return 'bg-black/70 text-ink';
+}
+
+/** Secondes restantes, affichées dans les 10 dernières secondes et pendant la réserve de temps. */
+function TurnCountdown({ deadline, now, timeBank }: { deadline: number; now: () => number; timeBank: boolean }) {
+  const [left, setLeft] = useState(() => Math.ceil((deadline - now()) / 1000));
+  useEffect(() => {
+    const tick = () => setLeft(Math.max(0, Math.ceil((deadline - now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [deadline, now]);
+  if (!timeBank && left > 10) return null;
+  return (
+    <span
+      className={cx(
+        'pointer-events-none absolute -bottom-1 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-px text-[10px] font-extrabold tabular shadow-lg',
+        timeBank ? 'bg-info text-white' : left <= 5 ? 'animate-pulse bg-danger text-white' : 'bg-gold-400 text-night-950',
+      )}
+      title={timeBank ? 'Réserve de temps en cours' : 'Temps restant'}
+    >
+      {timeBank ? `⏱ réserve ${left} s` : `${left} s`}
+    </span>
   );
 }
 
